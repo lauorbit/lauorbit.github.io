@@ -1,0 +1,175 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+    font-family: "PT Sans", sans-serif;
+    background-color: #f4f4f5;
+}
+
+.lau-green {
+    color: #006751;
+}
+
+h1,
+h2,
+h3,
+h4 {
+    font-family: "Raleway", sans-serif;
+}
+
+.tab-button {
+    transition: all 0.3s ease;
+    border-bottom-width: 4px;
+}
+
+.tab-button.active {
+    border-color: #006751;
+    background-color: #006751;
+    color: white;
+}
+
+.tab-button.active:hover {
+    color: white;
+}
+
+.tab-button:not(.active):hover {
+    color: #374151;
+    border-color: #006751;
+}
+
+.search-input::placeholder {
+    color: #9ca3af;
+    font-style: italic;
+}
+
+.result-card {
+    border-left: 5px solid #006751;
+}
+
+.filter-label {
+    font-weight: 500;
+    color: #374151;
+    font-family: "Raleway", sans-serif;
+}
+
+.summary-item {
+    cursor: pointer;
+    transition: background-color 0.2s, border-radius 0.2s;
+}
+
+.summary-item:hover {
+    background-color: #f9fafb;
+}
+
+.ts-control,
+.custom-select-arrow {
+    border-radius: 0.375rem;
+    border-color: #d1d5db;
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
+    background-position: right 0.5rem center;
+    background-repeat: no-repeat;
+    background-size: 1.5em 1.5em;
+    padding-right: 2.5rem !important;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+}
+
+.ts-wrapper.multi .ts-control {
+    max-height: 5.5rem;
+    overflow-y: auto;
+}
+
+.ts-control .ts-input,
+.ts-dropdown {
+    font-family: "PT Sans", sans-serif;
+}
+
+.info-icon,
+.link-icon {
+    display: inline-block;
+    width: 1.1rem;
+    height: 1.1rem;
+    margin-left: 0.35rem;
+    cursor: pointer;
+    vertical-align: middle;
+}
+
+.hyperlink {
+    color: #2563eb;
+}
+
+.hyperlink .link-icon {
+    color: #2563eb;
+}
+
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.5);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+}
+
+.modal-content {
+    background-color: white;
+    padding: 2rem;
+    border-radius: 0.5rem;
+    max-width: 500px;
+    width: 90%;
+    position: relative;
+}
+
+.modal-close {
+    position: absolute;
+    top: 0.5rem;
+    right: 0.5rem;
+    font-size: 1.5rem;
+    font-weight: bold;
+    cursor: pointer;
+    color: #6b7280;
+}
+
+.clear-search {
+    position: absolute;
+    right: 0.75rem;
+    top: 50%;
+    transform: translateY(-50%);
+    cursor: pointer;
+    color: #9ca3af;
+    display: none;
+}
+
+.search-input-wrapper:focus-within .clear-search,
+.search-input-wrapper .search-input:not(:placeholder-shown) + .clear-search {
+    display: block;
+}
+
+.faq-question.active .faq-arrow {
+    transform: rotate(180deg);
+}
+
+.icon-container {
+    width: 250px;
+    height: 250px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    margin: 1.5rem auto;
+    background-color: #0a0a1a;
+    border-radius: 0.75rem;
+    box-shadow: 0 4px 14px 0 rgba(0, 0, 0, 0.1);
+}
+
+.satellite-label {
+    font-family: "Inter", sans-serif;
+    font-size: 10px;
+    fill: #a0a0b0;
+    text-anchor: middle;
+}
