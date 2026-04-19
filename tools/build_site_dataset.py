@@ -114,17 +114,6 @@ DEFAULT_DATABASES_DIR = DEFAULT_INPUT.parent
 DEFAULT_SCOPUS = WORKSPACE_ROOT / "Scripts" / "ScopusListFeb2026.xlsx"
 DEFAULT_META_OUTPUT = SITE_DIR / "data" / "orbit-site-meta.js"
 DEFAULT_RECORDS_OUTPUT = SITE_DIR / "data" / "orbit-site-records.js"
-DEFAULT_TYPESENSE_SCHEMA_OUTPUT = SITE_DIR / "data" / "orbit-typesense-schema.json"
-DEFAULT_TYPESENSE_DOCUMENTS_OUTPUT = SITE_DIR / "data" / "orbit-typesense-documents.jsonl"
-TYPESENSE_COLLECTION_NAME = "orbit_journals"
-GRADE_SCORES = {
-    "A+": 5,
-    "A": 4,
-    "B": 3,
-    "C": 2,
-    "D": 1,
-    "Unranked": 0,
-}
 
 
 def clean_string(value: object) -> str:
@@ -164,10 +153,6 @@ def split_issns(value: object) -> list[str]:
         seen.add(token)
         tokens.append(token)
     return tokens
-
-
-def compact_issn(value: object) -> str:
-    return re.sub(r"[^0-9Xx]", "", clean_string(value)).upper()
 
 
 def split_urls(value: object) -> list[str]:
@@ -227,16 +212,6 @@ def maybe_float(value: object) -> float | str:
         return round(float(text), 4)
     except ValueError:
         return text
-
-
-def float_or_default(value: object, default: float = 0.0) -> float:
-    text = clean_string(value)
-    if not text:
-        return default
-    try:
-        return round(float(text), 4)
-    except ValueError:
-        return default
 
 
 def sorted_counter(counter: Counter[str]) -> dict[str, int]:
@@ -610,7 +585,6 @@ def build_payload(
 
         asjc_lookup = load_asjc_lookup(scopus_path)
         rows: list[list[object]] = []
-        typesense_documents: list[dict[str, object]] = []
         grade_counts: Counter[str] = Counter()
         asjc_counts: Counter[str] = Counter()
         publisher_options: set[str] = set()
@@ -627,7 +601,6 @@ def build_payload(
             asjc_codes = split_asjc_codes(
                 raw[header_index["All Science Journal Classification Codes (ASJC)"]]
             )
-            asjc_labels = [asjc_lookup[code] for code in asjc_codes if code in asjc_lookup]
             open_access_label = clean_string(raw[header_index["Open Access Status"]])
             business = is_truthy(raw[header_index["Business Journal"]])
             elite = is_truthy(raw[header_index["Is Elite Journal"]])
@@ -635,7 +608,6 @@ def build_payload(
             grade = clean_string(raw[header_index["ORBIT_Grade"]])
             uncertainty = maybe_float(raw[header_index["Uncertainty Score"]])
             title_variants = split_unique(title, r"\|")
-            primary_title = title_variants[0] if title_variants else title
             ratings_map = {
                 label: clean_string(raw[header_index[column]])
                 for label, column in RATING_COLUMNS
@@ -657,8 +629,7 @@ def build_payload(
             for publisher_token in publishers:
                 publisher_options.add(publisher_token)
 
-            normalized_grade = grade or "Unranked"
-            grade_counts[normalized_grade] += 1
+            grade_counts[grade or "Unranked"] += 1
 
             rows.append(
                 [
@@ -673,32 +644,6 @@ def build_payload(
                     grade,
                     uncertainty,
                 ]
-            )
-            typesense_documents.append(
-                {
-                    "id": str(len(typesense_documents)),
-                    "primary_title": primary_title,
-                    "title_variants": title_variants or [title],
-                    "issns": issns,
-                    "compact_issns": [compact_issn(issn) for issn in issns],
-                    "urls": urls,
-                    "publisher_display": publisher,
-                    "publishers": publishers,
-                    "asjc_codes": asjc_codes,
-                    "asjc_labels": asjc_labels,
-                    "flags": flags,
-                    "open_access_label": open_access_label,
-                    "is_open_access": 1 if open_access_label else 0,
-                    "grade": normalized_grade,
-                    "grade_score": GRADE_SCORES.get(normalized_grade, 0),
-                    "uncertainty": float_or_default(uncertainty),
-                    "rating_abdc": ratings_map["ABDC"],
-                    "rating_jufo": ratings_map["JUFO"],
-                    "rating_ajg": ratings_map["AJG"],
-                    "rating_fnege": ratings_map["FNEGE"],
-                    "rating_vhb": ratings_map["VHB"],
-                    "rating_norwegian": ratings_map["Norwegian"],
-                }
             )
     finally:
         workbook.close()
@@ -746,38 +691,7 @@ def build_payload(
             if code in asjc_counts
         },
         "rankingDistributions": client_ranking_distributions,
-    }, rows, typesense_documents
-
-
-def build_typesense_schema() -> dict[str, object]:
-    return {
-        "name": TYPESENSE_COLLECTION_NAME,
-        "fields": [
-            {"name": "id", "type": "string"},
-            {"name": "primary_title", "type": "string", "sort": True},
-            {"name": "title_variants", "type": "string[]"},
-            {"name": "issns", "type": "string[]"},
-            {"name": "compact_issns", "type": "string[]"},
-            {"name": "urls", "type": "string[]"},
-            {"name": "publisher_display", "type": "string"},
-            {"name": "publishers", "type": "string[]", "facet": True},
-            {"name": "asjc_codes", "type": "string[]", "facet": True},
-            {"name": "asjc_labels", "type": "string[]"},
-            {"name": "flags", "type": "int32"},
-            {"name": "open_access_label", "type": "string"},
-            {"name": "is_open_access", "type": "int32"},
-            {"name": "grade", "type": "string", "facet": True},
-            {"name": "grade_score", "type": "int32"},
-            {"name": "uncertainty", "type": "float"},
-            {"name": "rating_abdc", "type": "string"},
-            {"name": "rating_jufo", "type": "string"},
-            {"name": "rating_ajg", "type": "string"},
-            {"name": "rating_fnege", "type": "string"},
-            {"name": "rating_vhb", "type": "string"},
-            {"name": "rating_norwegian", "type": "string"},
-        ],
-        "default_sorting_field": "grade_score",
-    }
+    }, rows
 
 
 def to_site_url(path: Path) -> str:
@@ -792,19 +706,9 @@ def main() -> None:
     parser.add_argument("--scopus", type=Path, default=DEFAULT_SCOPUS)
     parser.add_argument("--meta-output", type=Path, default=DEFAULT_META_OUTPUT)
     parser.add_argument("--records-output", type=Path, default=DEFAULT_RECORDS_OUTPUT)
-    parser.add_argument(
-        "--typesense-schema-output",
-        type=Path,
-        default=DEFAULT_TYPESENSE_SCHEMA_OUTPUT,
-    )
-    parser.add_argument(
-        "--typesense-documents-output",
-        type=Path,
-        default=DEFAULT_TYPESENSE_DOCUMENTS_OUTPUT,
-    )
     args = parser.parse_args()
 
-    meta_payload, rows_payload, typesense_documents = build_payload(
+    meta_payload, rows_payload = build_payload(
         input_path=args.input.resolve(),
         scopus_path=args.scopus.resolve(),
         databases_dir=args.databases_dir.resolve(),
@@ -812,12 +716,8 @@ def main() -> None:
     )
     meta_output = args.meta_output.resolve()
     records_output = args.records_output.resolve()
-    typesense_schema_output = args.typesense_schema_output.resolve()
-    typesense_documents_output = args.typesense_documents_output.resolve()
     meta_output.parent.mkdir(parents=True, exist_ok=True)
     records_output.parent.mkdir(parents=True, exist_ok=True)
-    typesense_schema_output.parent.mkdir(parents=True, exist_ok=True)
-    typesense_documents_output.parent.mkdir(parents=True, exist_ok=True)
 
     meta_payload["recordsScriptUrl"] = to_site_url(records_output)
 
@@ -833,20 +733,10 @@ def main() -> None:
         f"globalThis.ORBIT_SITE_ROWS={serialized_rows};\n",
         encoding="utf-8",
     )
-    typesense_schema_output.write_text(
-        json.dumps(build_typesense_schema(), ensure_ascii=True, indent=2) + "\n",
-        encoding="utf-8",
-    )
-    with typesense_documents_output.open("w", encoding="utf-8") as handle:
-        for document in typesense_documents:
-            handle.write(json.dumps(document, ensure_ascii=True, separators=(",", ":")))
-            handle.write("\n")
 
     print(
         "Wrote site dataset with "
-        f"{len(rows_payload)} entries to "
-        f"{meta_output}, {records_output}, {typesense_schema_output}, and "
-        f"{typesense_documents_output}"
+        f"{len(rows_payload)} entries to {meta_output} and {records_output}"
     )
 
 

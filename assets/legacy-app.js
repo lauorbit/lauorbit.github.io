@@ -19,15 +19,7 @@
 
     const FLAGS = payload.flagBits;
     const RESULTS_PER_PAGE = 50;
-    const DEFAULT_TYPESENSE_SEARCH_PARAMETERS = {
-        query_by: "primary_title,title_variants,issns,compact_issns",
-        query_by_weights: "12,10,12,12",
-        prioritize_exact_match: true,
-        prefix: true,
-        num_typos: 2,
-        sort_by: "_text_match:desc,grade_score:desc,uncertainty:asc",
-        per_page: RESULTS_PER_PAGE,
-    };
+    const SEARCH_INDEX_BATCH_SIZE = 250;
     const GRADE_ORDER = ["A+", "A", "B", "C", "D", "Unranked"];
     const GRADE_SCORE = {
         "A+": 5,
@@ -95,9 +87,10 @@
         loadMoreResults: null,
         selectsReady: false,
         tomSelect: {},
-        typesenseResolved: false,
-        typesenseClient: null,
-        typesenseConfig: null,
+        searchIndexesPromise: null,
+        titleSearchIndex: null,
+        issnSearchIndex: null,
+        recordById: null,
         journalSearchDebounceId: null,
         journalSearchRequestToken: 0,
     };
@@ -279,261 +272,146 @@
         };
     }
 
-    function toStringArray(value) {
-        if (Array.isArray(value)) {
-            return value
-                .map((item) => String(item || "").trim())
-                .filter(Boolean);
-        }
-        if (typeof value === "string") {
-            return splitPipeValues(value);
-        }
-        return [];
-    }
-
-    function buildRecordFromSearchDocument(document) {
-        if (!document || typeof document !== "object") {
-            return null;
-        }
-
-        const titleVariants = toStringArray(document.title_variants);
-        const primaryTitle = String(document.primary_title || titleVariants[0] || "Untitled entry").trim() || "Untitled entry";
-        const publishers = toStringArray(document.publishers);
-        const issns = toStringArray(document.issns);
-        const compactIssns = toStringArray(document.compact_issns);
-        const urls = toStringArray(document.urls);
-        const asjcCodes = toStringArray(document.asjc_codes);
-        const ratingsMap = {
-            ABDC: String(document.rating_abdc || ""),
-            JUFO: String(document.rating_jufo || ""),
-            AJG: String(document.rating_ajg || ""),
-            FNEGE: String(document.rating_fnege || ""),
-            VHB: String(document.rating_vhb || ""),
-            Norwegian: String(document.rating_norwegian || ""),
-        };
-
-        return {
-            id: document.id ?? primaryTitle,
-            titleVariants: titleVariants.length ? titleVariants : [primaryTitle],
-            primaryTitle,
-            displayTitle: toDisplayTitleCase(primaryTitle),
-            normalizedTitle: normalizeText([primaryTitle, ...titleVariants].join(" ")),
-            issns,
-            compactIssns: compactIssns.length ? compactIssns : issns.map(compactIssn),
-            urls,
-            publishers,
-            publisherDisplay: String(document.publisher_display || publishers.join(" | ")),
-            asjcCodes,
-            flags: Number(document.flags || 0),
-            ratings: payload.ratingLabels.map((label) => ratingsMap[label] || ""),
-            ratingsMap,
-            openAccessLabel: String(document.open_access_label || ""),
-            grade: String(document.grade || "Unranked") || "Unranked",
-            uncertainty: Number.isFinite(Number(document.uncertainty)) ? Number(document.uncertainty) : 0,
-        };
-    }
-
-    function getTypesenseSearchConfig() {
-        const config = globalThis.ORBIT_SITE_SEARCH_CONFIG;
-        if (!config || config.enabled !== true) {
-            return null;
-        }
-
-        const collectionName = String(config.collectionName || "").trim();
-        const apiKey = String(config.apiKey || "").trim();
-        const nodes = Array.isArray(config.nodes)
-            ? config.nodes
-                .map((node) => ({
-                    host: String(node && node.host || "").trim(),
-                    port: String(node && node.port || "").trim(),
-                    protocol: String(node && node.protocol || "").trim(),
-                    path: String(node && node.path || "").trim(),
-                }))
-                .filter((node) => node.host && node.port && node.protocol)
-            : [];
-
-        if (!collectionName || !apiKey || !nodes.length) {
-            console.warn("Typesense search is enabled but missing required configuration.");
-            return null;
-        }
-
-        const pageProtocol = String(window.location && window.location.protocol || "").toLowerCase();
-        const pageHostname = String(window.location && window.location.hostname || "").toLowerCase();
-        const isLocalPage = ["localhost", "127.0.0.1", "::1"].includes(pageHostname);
-        const hasMixedContentNode = pageProtocol === "https:" && nodes.some((node) => node.protocol.toLowerCase() !== "https");
-        if (hasMixedContentNode) {
-            console.warn("Typesense search is enabled with a non-HTTPS node on an HTTPS page. Falling back to local search.");
-            return null;
-        }
-
-        const hasLoopbackNode = nodes.some((node) => ["localhost", "127.0.0.1", "::1"].includes(node.host.toLowerCase()));
-        if (!isLocalPage && hasLoopbackNode) {
-            console.warn("Typesense search is enabled with a localhost node on a public page. Falling back to local search.");
-            return null;
-        }
-
-        const connectionTimeoutSeconds = Math.max(1, Number(config.connectionTimeoutSeconds) || 5);
-        const searchParameters = config.searchParameters && typeof config.searchParameters === "object"
-            ? { ...DEFAULT_TYPESENSE_SEARCH_PARAMETERS, ...config.searchParameters }
-            : { ...DEFAULT_TYPESENSE_SEARCH_PARAMETERS };
-        searchParameters.per_page = Math.max(
-            RESULTS_PER_PAGE,
-            Number(searchParameters.per_page) || RESULTS_PER_PAGE
-        );
-
-        return {
-            collectionName,
-            apiKey,
-            nodes,
-            connectionTimeoutSeconds,
-            searchParameters,
-        };
-    }
-
-    async function ensureTypesenseClient() {
-        if (state.typesenseResolved) {
-            return state.typesenseClient;
-        }
-
-        state.typesenseResolved = true;
-        const config = getTypesenseSearchConfig();
-        if (!config) {
-            return null;
-        }
-        if (typeof Typesense === "undefined" || !Typesense.Client) {
-            console.warn("Typesense client library is unavailable. Falling back to local search.");
-            return null;
-        }
-
-        state.typesenseConfig = config;
-        state.typesenseClient = new Typesense.Client({
-            nodes: config.nodes,
-            apiKey: config.apiKey,
-            connectionTimeoutSeconds: config.connectionTimeoutSeconds,
+    function yieldToBrowser() {
+        return new Promise((resolve) => {
+            window.setTimeout(resolve, 0);
         });
-        return state.typesenseClient;
     }
 
-    function isLikelyIssnQuery(value) {
-        return compactIssn(value).length === 8 && /^[0-9xX\s-]+$/.test(String(value || ""));
-    }
-
-    function escapeTypesenseFilterLiteral(value) {
-        return `\`${String(value || "").replace(/`/g, "\\`")}\``;
-    }
-
-    function buildTypesenseExactAnyClause(field, values) {
-        if (!values || !values.size) {
-            return "";
-        }
-        const tokens = [...values].map((value) => escapeTypesenseFilterLiteral(value));
-        return `${field}:=[${tokens.join(",")}]`;
-    }
-
-    function buildTypesenseFilterBy({ selectedGrades, selectedAsjc, selectedPublishers, openAccessValue }) {
-        const clauses = [];
-
-        if (selectedGrades && selectedGrades.size) {
-            clauses.push(buildTypesenseExactAnyClause("grade", selectedGrades));
-        }
-        if (selectedAsjc && selectedAsjc.size) {
-            clauses.push(buildTypesenseExactAnyClause("asjc_codes", selectedAsjc));
-        }
-        if (selectedPublishers && selectedPublishers.size) {
-            clauses.push(buildTypesenseExactAnyClause("publishers", selectedPublishers));
-        }
-        if (openAccessValue === "Yes") {
-            clauses.push("is_open_access:=1");
-        } else if (openAccessValue === "No") {
-            clauses.push("is_open_access:=0");
-        }
-
-        return clauses.filter(Boolean).join(" && ");
-    }
-
-    function getTypesenseSortBy(sortValue, mode = "filter") {
-        if (mode === "journal") {
-            return "_text_match:desc,grade_score:desc,uncertainty:asc";
-        }
-        if (sortValue === "grade-desc") {
-            return "grade_score:desc,primary_title:asc";
-        }
-        if (sortValue === "grade-asc") {
-            return "grade_score:asc,primary_title:asc";
-        }
-        if (sortValue === "uncertainty-asc") {
-            return "uncertainty:asc,grade_score:desc,primary_title:asc";
-        }
-        return "primary_title:asc";
-    }
-
-    function extractTypesenseRecords(response) {
-        const hits = Array.isArray(response && response.hits) ? response.hits : [];
-        return hits
-            .map((hit) => buildRecordFromSearchDocument(hit && hit.document))
-            .filter(Boolean);
-    }
-
-    async function searchRecordsWithTypesense({
-        rawQuery,
-        q,
-        filterBy,
-        sortBy,
-    }) {
-        const client = await ensureTypesenseClient();
-        if (!client || !state.typesenseConfig) {
+    function createSearchIndexes() {
+        if (typeof FlexSearch === "undefined" || !FlexSearch.Index) {
+            console.warn("FlexSearch is unavailable. Falling back to linear search.");
             return null;
         }
 
-        const baseSearchParameters = {
-            ...state.typesenseConfig.searchParameters,
-            q: q || (isLikelyIssnQuery(rawQuery) ? compactIssn(rawQuery) : rawQuery),
-            page: 1,
+        return {
+            title: new FlexSearch.Index({
+                tokenize: "forward",
+            }),
+            issn: new FlexSearch.Index({
+                tokenize: "forward",
+            }),
         };
-        if (filterBy) {
-            baseSearchParameters.filter_by = filterBy;
-        }
-        if (sortBy) {
-            baseSearchParameters.sort_by = sortBy;
-        }
-        let nextPage = 2;
+    }
 
-        try {
-            const response = await client
-                .collections(state.typesenseConfig.collectionName)
-                .documents()
-                .search(baseSearchParameters);
-            const initialRecords = extractTypesenseRecords(response);
-            const totalFound = Math.max(
-                initialRecords.length,
-                Number(response && response.found) || 0
-            );
-            const loadMoreResults = totalFound > initialRecords.length
-                ? async () => {
-                    if (((nextPage - 1) * baseSearchParameters.per_page) >= totalFound) {
-                        return [];
-                    }
-                    const nextResponse = await client
-                        .collections(state.typesenseConfig.collectionName)
-                        .documents()
-                        .search({
-                            ...baseSearchParameters,
-                            page: nextPage,
-                        });
-                    nextPage += 1;
-                    return extractTypesenseRecords(nextResponse);
+    function normalizeSearchIds(result) {
+        if (!Array.isArray(result)) {
+            return [];
+        }
+
+        return result
+            .map((value) => Number(value))
+            .filter((value) => Number.isInteger(value));
+    }
+
+    function mergeSearchIds(...groups) {
+        const merged = [];
+        const seen = new Set();
+
+        groups.forEach((group) => {
+            group.forEach((id) => {
+                if (seen.has(id)) {
+                    return;
                 }
-                : null;
+                seen.add(id);
+                merged.push(id);
+            });
+        });
 
+        return merged;
+    }
+
+    async function ensureSearchIndexes() {
+        if (state.titleSearchIndex && state.issnSearchIndex && state.recordById) {
             return {
-                records: initialRecords,
-                totalFound,
-                loadMoreResults,
+                title: state.titleSearchIndex,
+                issn: state.issnSearchIndex,
             };
-        } catch (error) {
-            console.error("Typesense search failed. Falling back to local search.", error);
+        }
+
+        if (!state.searchIndexesPromise) {
+            state.searchIndexesPromise = (async () => {
+                const records = await loadRecords();
+                const indexes = createSearchIndexes();
+                if (!records || !indexes) {
+                    return null;
+                }
+
+                const recordById = new Map();
+                for (let index = 0; index < records.length; index += 1) {
+                    const record = records[index];
+                    recordById.set(record.id, record);
+
+                    if (record.normalizedTitle) {
+                        indexes.title.add(record.id, record.normalizedTitle);
+                    }
+                    if (record.compactIssns.length) {
+                        indexes.issn.add(record.id, record.compactIssns.join(" "));
+                    }
+                    if ((index + 1) % SEARCH_INDEX_BATCH_SIZE === 0) {
+                        await yieldToBrowser();
+                    }
+                }
+
+                state.titleSearchIndex = indexes.title;
+                state.issnSearchIndex = indexes.issn;
+                state.recordById = recordById;
+                return indexes;
+            })().finally(() => {
+                state.searchIndexesPromise = null;
+            });
+        }
+
+        return state.searchIndexesPromise;
+    }
+
+    async function searchRecordsWithFlexSearch(rawQuery) {
+        const indexes = await ensureSearchIndexes();
+        if (!indexes || !state.recordById || !state.records) {
             return null;
         }
+
+        const normalizedQuery = normalizeText(rawQuery);
+        const issnQuery = compactIssn(rawQuery);
+        const searchLimit = state.records.length;
+        const titleIds = normalizedQuery
+            ? normalizeSearchIds(indexes.title.search(normalizedQuery, searchLimit, { suggest: true }))
+            : [];
+        const issnIds = issnQuery
+            ? normalizeSearchIds(indexes.issn.search(issnQuery, searchLimit))
+            : [];
+        const orderedIds = mergeSearchIds(issnIds, titleIds);
+        const exactIssnMatches = new Set(
+            issnIds.filter((id) => {
+                const record = state.recordById.get(id);
+                return record && record.compactIssns.some((issn) => issn === issnQuery);
+            })
+        );
+        const rankMap = new Map();
+        orderedIds.forEach((id, index) => {
+            rankMap.set(id, index);
+        });
+
+        return orderedIds
+            .map((id) => state.recordById.get(id))
+            .filter(Boolean)
+            .sort((left, right) => {
+                const leftExactIssn = exactIssnMatches.has(left.id);
+                const rightExactIssn = exactIssnMatches.has(right.id);
+                if (leftExactIssn !== rightExactIssn) {
+                    return leftExactIssn ? -1 : 1;
+                }
+
+                const rankDiff = (rankMap.get(left.id) ?? Number.MAX_SAFE_INTEGER)
+                    - (rankMap.get(right.id) ?? Number.MAX_SAFE_INTEGER);
+                if (rankDiff) {
+                    return rankDiff;
+                }
+
+                return gradeValue(right.grade) - gradeValue(left.grade)
+                    || left.uncertainty - right.uncertainty
+                    || left.primaryTitle.localeCompare(right.primaryTitle);
+            });
     }
 
     async function loadRecords() {
@@ -855,19 +733,16 @@
         elements.resultsContainer.innerHTML = '<p class="text-gray-600 italic my-4">Searching journals...</p>';
         elements.paginationContainer.innerHTML = "";
 
-        const typesenseResults = await searchRecordsWithTypesense({
-            rawQuery,
-            sortBy: getTypesenseSortBy("grade-desc", "journal"),
-        });
+        const flexSearchResults = await searchRecordsWithFlexSearch(rawQuery);
         if (requestToken !== state.journalSearchRequestToken) {
             return;
         }
         state.activeMode = "journal";
 
-        if (typesenseResults !== null) {
-            state.currentResults = typesenseResults.records;
-            state.currentResultsTotal = typesenseResults.totalFound;
-            state.loadMoreResults = typesenseResults.loadMoreResults;
+        if (flexSearchResults !== null) {
+            state.currentResults = flexSearchResults;
+            state.currentResultsTotal = flexSearchResults.length;
+            state.loadMoreResults = null;
             await displayResults();
             return;
         }
@@ -913,25 +788,6 @@
         elements.paginationContainer.innerHTML = "";
 
         try {
-            const typesenseResults = await searchRecordsWithTypesense({
-                q: "*",
-                filterBy: buildTypesenseFilterBy({
-                    selectedGrades,
-                    selectedAsjc,
-                    selectedPublishers,
-                    openAccessValue,
-                }),
-                sortBy: getTypesenseSortBy(sortValue, "filter"),
-            });
-
-            if (typesenseResults !== null) {
-                state.currentResults = typesenseResults.records;
-                state.currentResultsTotal = typesenseResults.totalFound;
-                state.loadMoreResults = typesenseResults.loadMoreResults;
-                await displayResults();
-                return;
-            }
-
             const records = await ensureRecords(null, "Loading journal data...");
             if (!records) {
                 return;
