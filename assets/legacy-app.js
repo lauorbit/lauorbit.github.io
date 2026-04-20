@@ -70,7 +70,6 @@
         panelContact: document.getElementById("panel-contact"),
         aboutGradeTableBody: document.getElementById("about-grade-table-body"),
         aboutSummaryStats: document.getElementById("about-summary-stats"),
-        rankingDistributionChart: document.getElementById("ranking-distribution-chart"),
         faqJournalsMethodology: document.getElementById("faq-journals-methodology"),
         faqJournalsUsage: document.getElementById("faq-journals-usage"),
     };
@@ -871,7 +870,6 @@
 
         if (nextTab === "about" && !state.aboutReady) {
             renderAboutStats();
-            renderRankingDistributionChart();
             state.aboutReady = true;
         }
 
@@ -900,103 +898,6 @@
         }).join("");
 
         elements.aboutSummaryStats.textContent = `The grade distribution is based on ${formatNumber(payload.stats.gradedEntries)} journals ranked by ORBIT, excluding ${formatNumber(payload.stats.unrankedEntries)} unranked titles. The updated release maps ${formatNumber(payload.stats.asjcCount)} distinct ASJC classes.`;
-    }
-
-    function renderRankingDistributionChart() {
-        if (!elements.rankingDistributionChart) {
-            return;
-        }
-
-        const chart = payload.rankingDistributions;
-        if (!chart || !Array.isArray(chart.xValues) || !Array.isArray(chart.systems) || !chart.systems.length) {
-            elements.rankingDistributionChart.innerHTML = '<p class="text-sm text-gray-600">Ranking distribution chart unavailable.</p>';
-            return;
-        }
-
-        const width = 820;
-        const height = 460;
-        const legendRows = Math.ceil(chart.systems.length / 3);
-        const margin = { top: 28 + (legendRows * 18) + 18, right: 20, bottom: 48, left: 56 };
-        const plotWidth = width - margin.left - margin.right;
-        const plotHeight = height - margin.top - margin.bottom;
-        const xMin = chart.xValues[0] ?? 0;
-        const xMax = chart.xValues[chart.xValues.length - 1] ?? 100;
-        const maxY = chart.systems.reduce((largest, system) => {
-            const systemMax = Array.isArray(system.curve) && system.curve.length
-                ? Math.max(...system.curve)
-                : 0;
-            return Math.max(largest, systemMax);
-        }, 0.001);
-        const xScale = (value) => margin.left + (((value - xMin) / Math.max(xMax - xMin, 1)) * plotWidth);
-        const yScale = (value) => margin.top + plotHeight - ((value / maxY) * plotHeight);
-        const formatDensityTick = (value) => (value >= 0.1 ? value.toFixed(2) : value.toFixed(3));
-
-        const horizontalGrid = Array.from({ length: 5 }, (_, index) => {
-            const tickValue = (maxY * index) / 4;
-            const y = yScale(tickValue);
-            return `
-                <g>
-                    <line x1="${margin.left}" y1="${y.toFixed(2)}" x2="${(width - margin.right).toFixed(2)}" y2="${y.toFixed(2)}" stroke="#E5E7EB" stroke-width="1"></line>
-                    <text x="${(margin.left - 8).toFixed(2)}" y="${(y + 4).toFixed(2)}" text-anchor="end" fill="#6B7280" font-size="11">${formatDensityTick(tickValue)}</text>
-                </g>
-            `;
-        }).join("");
-
-        const verticalGrid = [0, 20, 40, 60, 80, 100].map((tickValue) => {
-            const x = xScale(tickValue);
-            return `
-                <g>
-                    <line x1="${x.toFixed(2)}" y1="${margin.top}" x2="${x.toFixed(2)}" y2="${(margin.top + plotHeight).toFixed(2)}" stroke="#F3F4F6" stroke-width="1"></line>
-                    <text x="${x.toFixed(2)}" y="${(height - 18).toFixed(2)}" text-anchor="middle" fill="#6B7280" font-size="11">${tickValue}</text>
-                </g>
-            `;
-        }).join("");
-
-        const pathGroups = chart.systems.map((system) => {
-            const curve = Array.isArray(system.curve) ? system.curve : [];
-            const pointCount = Math.min(chart.xValues.length, curve.length);
-            const pathData = Array.from({ length: pointCount }, (_, index) => {
-                const x = xScale(chart.xValues[index]).toFixed(2);
-                const y = yScale(curve[index]).toFixed(2);
-                return `${index === 0 ? "M" : "L"} ${x} ${y}`;
-            }).join(" ");
-            const rankSummary = Array.isArray(system.rankCounts)
-                ? system.rankCounts.map((entry) => `${entry.rank}: ${formatNumber(entry.count)}`).join(", ")
-                : "";
-
-            return `
-                <g>
-                    <title>${escapeHtml(`${system.label} (${formatNumber(system.sampleSize || 0)} entries). ${rankSummary}`)}</title>
-                    <path d="${pathData}" fill="none" stroke="${system.color}" stroke-width="2.75" stroke-linecap="round" stroke-linejoin="round"></path>
-                </g>
-            `;
-        }).join("");
-
-        const legendItems = chart.systems.map((system, index) => {
-            const column = index % 3;
-            const row = Math.floor(index / 3);
-            const x = margin.left + (column * 240);
-            const y = 18 + (row * 18);
-            return `
-                <g transform="translate(${x}, ${y})">
-                    <line x1="0" y1="0" x2="20" y2="0" stroke="${system.color}" stroke-width="3" stroke-linecap="round"></line>
-                    <text x="28" y="4" fill="#374151" font-size="11">${escapeHtml(`${system.label} n=${formatNumber(system.sampleSize || 0)}`)}</text>
-                </g>
-            `;
-        }).join("");
-
-        elements.rankingDistributionChart.innerHTML = `
-            <svg viewBox="0 0 ${width} ${height}" class="w-full h-auto" role="img" aria-label="Probability density functions of ranking system and ORBIT percentile score distributions">
-                <title>Probability Density Functions of Ranking System and ORBIT Percentile Score Distributions</title>
-                ${legendItems}
-                ${horizontalGrid}
-                ${verticalGrid}
-                <rect x="${margin.left}" y="${margin.top}" width="${plotWidth}" height="${plotHeight}" fill="none" stroke="#9CA3AF" stroke-width="1"></rect>
-                ${pathGroups}
-                <text x="${margin.left - 38}" y="${(margin.top + (plotHeight / 2)).toFixed(2)}" text-anchor="middle" fill="#4B5563" font-size="12" transform="rotate(-90 ${margin.left - 38} ${margin.top + (plotHeight / 2)})">Density</text>
-                <text x="${(margin.left + (plotWidth / 2)).toFixed(2)}" y="${(height - 4).toFixed(2)}" text-anchor="middle" fill="#4B5563" font-size="12">Percentile Score</text>
-            </svg>
-        `;
     }
 
     function renderFaqSection(container, items) {
