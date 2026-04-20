@@ -87,7 +87,8 @@
         selectsReady: false,
         tomSelect: {},
         searchIndexesPromise: null,
-        titleSearchIndex: null,
+        primaryTitleSearchIndex: null,
+        titleVariantSearchIndex: null,
         issnSearchIndex: null,
         recordById: null,
         journalSearchDebounceId: null,
@@ -255,6 +256,9 @@
             titleVariants,
             primaryTitle: titleVariants[0] || "Untitled entry",
             displayTitle: toDisplayTitleCase(titleVariants[0] || "Untitled entry"),
+            normalizedPrimaryTitle: normalizeText(titleVariants[0] || ""),
+            normalizedTitleVariants: titleVariants.map(normalizeText).filter(Boolean),
+            normalizedVariantTitles: titleVariants.slice(1).map(normalizeText).filter(Boolean),
             normalizedTitle: normalizeText(titleVariants.join(" ")),
             issns,
             compactIssns: issns.map(compactIssn),
@@ -284,7 +288,10 @@
         }
 
         return {
-            title: new FlexSearch.Index({
+            primaryTitle: new FlexSearch.Index({
+                tokenize: "forward",
+            }),
+            titleVariant: new FlexSearch.Index({
                 tokenize: "forward",
             }),
             issn: new FlexSearch.Index({
@@ -320,10 +327,133 @@
         return merged;
     }
 
+    function mergeRecordGroups(...groups) {
+        const merged = [];
+        const seen = new Set();
+
+        groups.forEach((group) => {
+            group.forEach((record) => {
+                if (!record || seen.has(record.id)) {
+                    return;
+                }
+                seen.add(record.id);
+                merged.push(record);
+            });
+        });
+
+        return merged;
+    }
+
+    function compareJournalSearchRecords(left, right) {
+        return gradeValue(right.grade) - gradeValue(left.grade)
+            || left.uncertainty - right.uncertainty
+            || left.primaryTitle.localeCompare(right.primaryTitle);
+    }
+
+    function sortJournalSearchRecords(records) {
+        return [...records].sort(compareJournalSearchRecords);
+    }
+
+    function matchesPrimaryTitle(record, matcher) {
+        return Boolean(record.normalizedPrimaryTitle) && matcher(record.normalizedPrimaryTitle);
+    }
+
+    function matchesVariantTitle(record, matcher) {
+        return record.normalizedVariantTitles.some((variant) => matcher(variant));
+    }
+
+    function hasOrderedTokenMatch(value, queryTokens) {
+        if (!queryTokens.length) {
+            return false;
+        }
+
+        let nextIndex = 0;
+        for (const token of queryTokens) {
+            const matchIndex = value.indexOf(token, nextIndex);
+            if (matchIndex === -1) {
+                return false;
+            }
+            nextIndex = matchIndex + token.length;
+        }
+
+        return true;
+    }
+
+    function collectLinearSearchBuckets(records, normalizedQuery, issnQuery) {
+        const queryTokens = normalizedQuery ? normalizedQuery.split(/\s+/).filter(Boolean) : [];
+        const buckets = {
+            exactIssn: [],
+            exactPrimaryTitle: [],
+            prefixPrimaryTitle: [],
+            phrasePrimaryTitle: [],
+            orderedPrimaryTokens: [],
+            allPrimaryTokens: [],
+            exactVariantTitle: [],
+            prefixVariantTitle: [],
+            phraseVariantTitle: [],
+            orderedVariantTokens: [],
+            allVariantTokens: [],
+        };
+
+        records.forEach((record) => {
+            if (issnQuery && record.compactIssns.some((issn) => issn === issnQuery)) {
+                buckets.exactIssn.push(record);
+                return;
+            }
+            if (!normalizedQuery) {
+                return;
+            }
+            if (matchesPrimaryTitle(record, (value) => value === normalizedQuery)) {
+                buckets.exactPrimaryTitle.push(record);
+                return;
+            }
+            if (matchesPrimaryTitle(record, (value) => value.startsWith(normalizedQuery))) {
+                buckets.prefixPrimaryTitle.push(record);
+                return;
+            }
+            if (matchesPrimaryTitle(record, (value) => value.includes(normalizedQuery))) {
+                buckets.phrasePrimaryTitle.push(record);
+                return;
+            }
+            if (queryTokens.length > 1 && matchesPrimaryTitle(record, (value) => hasOrderedTokenMatch(value, queryTokens))) {
+                buckets.orderedPrimaryTokens.push(record);
+                return;
+            }
+            if (queryTokens.length > 1 && matchesPrimaryTitle(record, (value) => queryTokens.every((token) => value.includes(token)))) {
+                buckets.allPrimaryTokens.push(record);
+                return;
+            }
+            if (matchesVariantTitle(record, (value) => value === normalizedQuery)) {
+                buckets.exactVariantTitle.push(record);
+                return;
+            }
+            if (matchesVariantTitle(record, (value) => value.startsWith(normalizedQuery))) {
+                buckets.prefixVariantTitle.push(record);
+                return;
+            }
+            if (matchesVariantTitle(record, (value) => value.includes(normalizedQuery))) {
+                buckets.phraseVariantTitle.push(record);
+                return;
+            }
+            if (queryTokens.length > 1 && matchesVariantTitle(record, (value) => hasOrderedTokenMatch(value, queryTokens))) {
+                buckets.orderedVariantTokens.push(record);
+                return;
+            }
+            if (queryTokens.length > 1 && matchesVariantTitle(record, (value) => queryTokens.every((token) => value.includes(token)))) {
+                buckets.allVariantTokens.push(record);
+            }
+        });
+
+        return Object.fromEntries(
+            Object.entries(buckets).map(([key, items]) => [key, sortJournalSearchRecords(items)])
+        );
+    }
+
     async function ensureSearchIndexes() {
-        if (state.titleSearchIndex && state.issnSearchIndex && state.recordById) {
+        if (state.primaryTitleSearchIndex && state.titleVariantSearchIndex && state.issnSearchIndex && state.recordById) {
             return {
-                title: state.titleSearchIndex,
+                primaryTitle: state.primaryTitleSearchIndex,
+                titleVariant: state.titleVariantSearchIndex,
                 issn: state.issnSearchIndex,
             };
         }
@@ -341,8 +471,11 @@
                     const record = records[index];
                     recordById.set(record.id, record);
 
-                    if (record.normalizedTitle) {
-                        indexes.title.add(record.id, record.normalizedTitle);
+                    if (record.normalizedPrimaryTitle) {
+                        indexes.primaryTitle.add(record.id, record.normalizedPrimaryTitle);
+                    }
+                    if (record.normalizedVariantTitles.length) {
+                        indexes.titleVariant.add(record.id, record.normalizedVariantTitles.join(" "));
                     }
                     if (record.compactIssns.length) {
                         indexes.issn.add(record.id, record.compactIssns.join(" "));
@@ -352,7 +485,8 @@
                     }
                 }
 
-                state.titleSearchIndex = indexes.title;
+                state.primaryTitleSearchIndex = indexes.primaryTitle;
+                state.titleVariantSearchIndex = indexes.titleVariant;
                 state.issnSearchIndex = indexes.issn;
                 state.recordById = recordById;
                 return indexes;
@@ -372,45 +506,36 @@
 
         const normalizedQuery = normalizeText(rawQuery);
         const issnQuery = compactIssn(rawQuery);
+        const linearBuckets = collectLinearSearchBuckets(state.records, normalizedQuery, issnQuery);
         const searchLimit = state.records.length;
-        const titleIds = normalizedQuery
-            ? normalizeSearchIds(indexes.title.search(normalizedQuery, searchLimit, { suggest: true }))
+        const primaryTitleIds = normalizedQuery
+            ? normalizeSearchIds(indexes.primaryTitle.search(normalizedQuery, searchLimit, { suggest: true }))
+            : [];
+        const titleVariantIds = normalizedQuery
+            ? normalizeSearchIds(indexes.titleVariant.search(normalizedQuery, searchLimit, { suggest: true }))
             : [];
         const issnIds = issnQuery
             ? normalizeSearchIds(indexes.issn.search(issnQuery, searchLimit))
             : [];
-        const orderedIds = mergeSearchIds(issnIds, titleIds);
-        const exactIssnMatches = new Set(
-            issnIds.filter((id) => {
-                const record = state.recordById.get(id);
-                return record && record.compactIssns.some((issn) => issn === issnQuery);
-            })
-        );
-        const rankMap = new Map();
-        orderedIds.forEach((id, index) => {
-            rankMap.set(id, index);
-        });
-
-        return orderedIds
+        const orderedIds = mergeSearchIds(issnIds, primaryTitleIds, titleVariantIds);
+        const flexRecords = orderedIds
             .map((id) => state.recordById.get(id))
-            .filter(Boolean)
-            .sort((left, right) => {
-                const leftExactIssn = exactIssnMatches.has(left.id);
-                const rightExactIssn = exactIssnMatches.has(right.id);
-                if (leftExactIssn !== rightExactIssn) {
-                    return leftExactIssn ? -1 : 1;
-                }
+            .filter(Boolean);
 
-                const rankDiff = (rankMap.get(left.id) ?? Number.MAX_SAFE_INTEGER)
-                    - (rankMap.get(right.id) ?? Number.MAX_SAFE_INTEGER);
-                if (rankDiff) {
-                    return rankDiff;
-                }
-
-                return gradeValue(right.grade) - gradeValue(left.grade)
-                    || left.uncertainty - right.uncertainty
-                    || left.primaryTitle.localeCompare(right.primaryTitle);
-            });
+        return mergeRecordGroups(
+            linearBuckets.exactIssn,
+            linearBuckets.exactPrimaryTitle,
+            linearBuckets.prefixPrimaryTitle,
+            linearBuckets.phrasePrimaryTitle,
+            linearBuckets.orderedPrimaryTokens,
+            linearBuckets.allPrimaryTokens,
+            linearBuckets.exactVariantTitle,
+            linearBuckets.prefixVariantTitle,
+            linearBuckets.phraseVariantTitle,
+            linearBuckets.orderedVariantTokens,
+            linearBuckets.allVariantTokens,
+            flexRecords
+        );
     }
 
     async function loadRecords() {
@@ -753,13 +878,21 @@
 
         const query = normalizeText(rawQuery);
         const issnQuery = compactIssn(rawQuery);
+        const linearBuckets = collectLinearSearchBuckets(records, query, issnQuery);
 
-        state.currentResults = sortRecords(records.filter((record) => {
-            if (query && record.normalizedTitle.includes(query)) {
-                return true;
-            }
-            return issnQuery && record.compactIssns.some((issn) => issn === issnQuery);
-        }), "grade-desc");
+        state.currentResults = mergeRecordGroups(
+            linearBuckets.exactIssn,
+            linearBuckets.exactPrimaryTitle,
+            linearBuckets.prefixPrimaryTitle,
+            linearBuckets.phrasePrimaryTitle,
+            linearBuckets.orderedPrimaryTokens,
+            linearBuckets.allPrimaryTokens,
+            linearBuckets.exactVariantTitle,
+            linearBuckets.prefixVariantTitle,
+            linearBuckets.phraseVariantTitle,
+            linearBuckets.orderedVariantTokens,
+            linearBuckets.allVariantTokens
+        );
         state.currentResultsTotal = state.currentResults.length;
         state.loadMoreResults = null;
 
