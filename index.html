@@ -86,14 +86,16 @@
                 </svg>
             </div>
             <h1 class="text-3xl md:text-4xl font-bold text-gray-800">ORBIT Rankings and Beyond</h1>
-            <p class="text-gray-600 mt-2">Your guide to journal rankings and classifications.</p>
+            <p class="text-gray-600 mt-2">Your guide to journal, conference, and publisher rankings.</p>
         </header>
 
         <main id="main-content" class="bg-white p-6 rounded-lg shadow-lg">
             <div id="tab-container" class="mb-6 border-b border-gray-200 hidden">
                 <nav class="flex flex-wrap -mb-px" aria-label="Tabs">
-                    <button id="tab-journal-search" class="tab-button active text-gray-600 py-3 px-4 text-sm font-medium text-center rounded-t-lg border-transparent">Search for a Journal</button>
-                    <button id="tab-filter-search" class="tab-button text-gray-600 py-3 px-4 text-sm font-medium text-center rounded-t-lg border-transparent">Search Filter</button>
+                    <button id="tab-journal-search" class="tab-button active text-gray-600 py-3 px-4 text-sm font-medium text-center rounded-t-lg border-transparent">Search Journals</button>
+                    <button id="tab-conference-search" class="tab-button text-gray-600 py-3 px-4 text-sm font-medium text-center rounded-t-lg border-transparent">Search Conferences</button>
+                    <button id="tab-publisher-search" class="tab-button text-gray-600 py-3 px-4 text-sm font-medium text-center rounded-t-lg border-transparent">Search Publishers</button>
+                    <button id="tab-filter-search" class="tab-button text-gray-600 py-3 px-4 text-sm font-medium text-center rounded-t-lg border-transparent">Filter Journals</button>
                     <button id="tab-about" class="tab-button text-gray-600 py-3 px-4 text-sm font-medium text-center rounded-t-lg border-transparent">About</button>
                     <button id="tab-faq" class="tab-button text-gray-600 py-3 px-4 text-sm font-medium text-center rounded-t-lg border-transparent">FAQ</button>
                     <button id="tab-contact" class="tab-button text-gray-600 py-3 px-4 text-sm font-medium text-center rounded-t-lg border-transparent">Contact Us</button>
@@ -105,6 +107,32 @@
                     <div class="relative w-full search-input-wrapper">
                         <input type="text" id="journal-input" class="search-input w-full h-10 px-4 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-lau-green" placeholder="Enter journal name or ISSN" autocomplete="off" spellcheck="false">
                         <span id="clear-search-btn" class="clear-search">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                        </span>
+                    </div>
+                </div>
+            </div>
+
+            <div id="panel-conference-search" class="hidden">
+                <div class="w-full">
+                    <div class="relative w-full search-input-wrapper">
+                        <input type="text" id="conference-input" class="search-input w-full h-10 px-4 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-lau-green" placeholder="Enter conference name or ISSN" autocomplete="off" spellcheck="false">
+                        <span id="clear-conference-search-btn" class="clear-search">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                        </span>
+                    </div>
+                </div>
+            </div>
+
+            <div id="panel-publisher-search" class="hidden">
+                <div class="w-full">
+                    <div class="relative w-full search-input-wrapper">
+                        <input type="text" id="publisher-search-input" class="search-input w-full h-10 px-4 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-lau-green" placeholder="Enter publisher name or ISBN" autocomplete="off" spellcheck="false">
+                        <span id="clear-publisher-search-btn" class="clear-search">
                             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                                 <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
                             </svg>
@@ -154,6 +182,11 @@
 
             <div id="panel-about" class="hidden prose max-w-none">
                 <h2 class="lau-green">About the ORBIT Ranking</h2>
+                <div class="flex flex-wrap gap-2 my-4" aria-label="About categories">
+                    <button id="about-tab-journals" class="tab-button active px-4 py-2 rounded-md border border-gray-200" type="button">Journals</button>
+                    <button id="about-tab-conferences" class="tab-button px-4 py-2 rounded-md border border-gray-200" type="button">Conferences</button>
+                    <button id="about-tab-publishers" class="tab-button px-4 py-2 rounded-md border border-gray-200" type="button">Publishers</button>
+                </div>
                 <div id="about-panel-journals">
                     <p>This tool provides access to the Objective Ranking through Bias-reduced Integrated Tiers (ORBIT), a comprehensive system designed to offer a stable and holistic view of academic journal quality.</p>
                     <p>ORBIT synthesizes the expert opinions of major international ranking systems to produce a single consensus grade and an "uncertainty score" that measures the level of agreement among the sources.</p>
@@ -190,15 +223,52 @@
                         <li><a href="https://jsom.utdallas.edu/the-utd-top-100-business-school-research-rankings/search#rankingsByJournal" target="_blank" class="hyperlink">UTD24<svg class="link-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-4.5 0V6.375c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A2.25 2.25 0 0110.5 10.5v-4.5a2.25 2.25 0 012.25-2.25H15M10.5 15L15 10.5" /></svg></a></li>
                         <li><a href="https://www.vhbonline.org/en/services/vhb-rating-2024" target="_blank" class="hyperlink">VHB<svg class="link-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-4.5 0V6.375c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A2.25 2.25 0 0110.5 10.5v-4.5a2.25 2.25 0 012.25-2.25H15M10.5 15L15 10.5" /></svg></a></li>
                     </ul>
-                    <p>The release also carries publisher names, open-access flags, and ASJC classifications sourced through <a href="https://www.scopus.com/sources" target="_blank" rel="noreferrer" class="hyperlink">Scopus<svg class="link-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-4.5 0V6.375c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A2.25 2.25 0 0110.5 10.5v-4.5a2.25 2.25 0 012.25-2.25H15M10.5 15L15 10.5" /></svg></a>.</p>
+                    <p>We also use <a href="https://scopus.com" target="_blank" rel="noreferrer" class="hyperlink">Scopus<svg class="link-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-4.5 0V6.375c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A2.25 2.25 0 0110.5 10.5v-4.5a2.25 2.25 0 012.25-2.25H15M10.5 15L15 10.5" /></svg></a> to obtain non-ranking data such as publisher and open-access status.</p>
+                </div>
+
+                <div id="about-panel-conferences" class="hidden">
+                    <h3 class="lau-green">Conference Ranking</h3>
+                    <p>ORBIT provides a structured and reliability-aware ranking of <em>academic conferences</em> by integrating evidence from three expert-driven systems: <strong>CORE</strong>, <strong>JUFO</strong>, and the <strong>Norwegian Register</strong>. Each system's discrete tiers are first mapped to a common 0-100 scale using percentile-based midpoints, after which an <em>ORBIT score</em> is computed as a reliability-weighted average over the systems available for a given conference, requiring at least two systems.</p>
+                    <p>Final letter grades (<strong>D</strong> through <strong>A+</strong>) are assigned using fixed score thresholds, with an explicit <em>Elite override</em> that labels designated top venues as <strong>A+</strong> regardless of the numeric score. Alongside the grade, ORBIT reports an <em>uncertainty</em> measure that reflects cross-system agreement: uncertainty is lower when systems concur and place a conference near the top tiers, and higher when signals diverge or coverage is sparse.</p>
+
+                    <h3 class="lau-green mt-6">Source Rankings</h3>
+                    <p>ORBIT only includes conferences which are ranked by at least two of our used rankings/lists. We currently use the following expert-based rankings/lists:</p>
+                    <ul class="list-disc pl-5">
+                        <li><a href="https://portal.core.edu.au/conf-ranks/" target="_blank" rel="noreferrer" class="hyperlink">CORE</a></li>
+                        <li><a href="https://csrankings.org" target="_blank" rel="noreferrer" class="hyperlink">CSRankings</a></li>
+                        <li><a href="https://www.shanghairanking.com/activities/aes" target="_blank" rel="noreferrer" class="hyperlink">ARWU</a></li>
+                        <li><a href="https://jfp.csc.fi/jufoportal" target="_blank" rel="noreferrer" class="hyperlink">JUFO</a></li>
+                        <li><a href="https://kanalregister.hkdir.no/en" target="_blank" rel="noreferrer" class="hyperlink">Norwegian Register</a></li>
+                    </ul>
+                </div>
+
+                <div id="about-panel-publishers" class="hidden">
+                    <h3 class="lau-green">Publisher Ranking</h3>
+                    <p>ORBIT provides a conservative, transparent ranking of <em>academic publishers</em> based on the <strong>overlap</strong> of two independent expert systems: <strong>JUFO</strong> and the <strong>Norwegian Register</strong>. While percentile-based 0-100 scores are computed for reporting, the <strong>final letter grade is determined only by the pair</strong> of JUFO level and Norwegian level, using a fixed rubric that is fully auditable.</p>
+                    <p>The top grade <strong>A+</strong> is assigned only when JUFO = 3 and Norwegian = 2, making grade inflation unlikely and keeping top tiers intentionally selective. Grades are issued only when both systems are present; missing values are treated as lack of evidence rather than low quality. A companion <em>reliability</em> indicator is reported as the cross-system disagreement, where larger disagreement implies lower confidence in the assigned grade.</p>
+
+                    <h3 class="lau-green mt-6">Source Rankings</h3>
+                    <ul class="list-disc pl-5">
+                        <li><a href="https://jfp.csc.fi/jufoportal" target="_blank" rel="noreferrer" class="hyperlink">JUFO</a></li>
+                        <li><a href="https://kanalregister.hkdir.no/en" target="_blank" rel="noreferrer" class="hyperlink">Norwegian Register</a></li>
+                    </ul>
                 </div>
 
             </div>
 
             <div id="panel-faq" class="hidden space-y-6">
                 <div>
+                    <h2 class="text-xl font-bold lau-green">Journals</h2>
                     <div class="space-y-2" id="faq-journals-methodology"></div>
                     <div class="space-y-2 mt-4" id="faq-journals-usage"></div>
+                </div>
+                <div>
+                    <h2 class="text-xl font-bold lau-green">Conferences</h2>
+                    <div class="space-y-2 mt-2" id="faq-conferences"></div>
+                </div>
+                <div>
+                    <h2 class="text-xl font-bold lau-green">Publishers</h2>
+                    <div class="space-y-2 mt-2" id="faq-publishers"></div>
                 </div>
             </div>
 

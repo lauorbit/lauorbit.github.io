@@ -15,7 +15,9 @@ from typing import Iterable, Iterator
 
 from openpyxl import load_workbook
 
-WORKSHEET_NAME = "Unified_Journals"
+JOURNALS_WORKSHEET_NAME = "Unified_Journals"
+PUBLISHERS_WORKSHEET_NAME = "Publishers"
+CONFERENCES_WORKSHEET_NAME = "Conferences"
 ASJC_WORKSHEET_NAME = "ASJC Classification Codes"
 RATING_COLUMNS = [
     ("ABDC", "ABDC: 2025 rating"),
@@ -103,14 +105,13 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 SITE_DIR = SCRIPT_DIR.parent
 WORKSPACE_ROOT = SITE_DIR.parent
 
-DEFAULT_INPUT = (
+DEFAULT_INPUT = SITE_DIR / "ORBIT.xlsx"
+DEFAULT_DATABASES_DIR = (
     WORKSPACE_ROOT
     / "Scripts"
-    / "ORBITResult_20260414_154306"
+    / "ORBITResult_20260422_092001"
     / "databases"
-    / "NEWORBIT.xlsx"
 )
-DEFAULT_DATABASES_DIR = DEFAULT_INPUT.parent
 DEFAULT_SCOPUS = WORKSPACE_ROOT / "Scripts" / "ScopusListFeb2026.xlsx"
 DEFAULT_META_OUTPUT = SITE_DIR / "data" / "orbit-site-meta.js"
 DEFAULT_RECORDS_OUTPUT = SITE_DIR / "data" / "orbit-site-records.js"
@@ -149,6 +150,18 @@ def split_issns(value: object) -> list[str]:
     for part in split_unique(value, r"[|,;/]+"):
         token = re.sub(r"[^0-9Xx]", "", part).upper()
         if len(token) < 8 or token in seen:
+            continue
+        seen.add(token)
+        tokens.append(token)
+    return tokens
+
+
+def split_identifiers(value: object) -> list[str]:
+    tokens: list[str] = []
+    seen: set[str] = set()
+    for part in split_unique(value, r"[|,;/]+"):
+        token = re.sub(r"[^0-9Xx]", "", part).upper()
+        if len(token) < 4 or token in seen:
             continue
         seen.add(token)
         tokens.append(token)
@@ -555,10 +568,10 @@ def build_payload(
     scopus_path: Path,
     databases_dir: Path,
     current_year: int,
-) -> tuple[dict[str, object], list[list[object]], list[dict[str, object]]]:
+) -> tuple[dict[str, object], dict[str, list[list[object]]]]:
     workbook = load_workbook(input_path, read_only=True, data_only=True)
     try:
-        worksheet = workbook[WORKSHEET_NAME]
+        worksheet = workbook[JOURNALS_WORKSHEET_NAME]
         headers = [
             clean_string(cell)
             for cell in next(worksheet.iter_rows(min_row=1, max_row=1, values_only=True))
@@ -645,6 +658,9 @@ def build_payload(
                     uncertainty,
                 ]
             )
+
+        publisher_rows = build_publisher_rows(workbook)
+        conference_rows = build_conference_rows(workbook)
     finally:
         workbook.close()
 
@@ -684,6 +700,11 @@ def build_payload(
             "unrankedEntries": grade_counts.get("Unranked", 0),
             "gradeCounts": sorted_counter(grade_counts),
             "asjcCount": len(asjc_counts),
+            "journalEntries": len(rows),
+            "conferenceEntries": len(conference_rows),
+            "publisherEntries": len(publisher_rows),
+            "gradedConferenceEntries": sum(1 for row in conference_rows if row[2] != "Unranked"),
+            "gradedPublisherEntries": sum(1 for row in publisher_rows if row[7] != "Unranked"),
         },
         "asjcLookup": {
             code: asjc_lookup[code]
@@ -691,7 +712,109 @@ def build_payload(
             if code in asjc_counts
         },
         "rankingDistributions": client_ranking_distributions,
-    }, rows
+    }, {
+        "journals": rows,
+        "publishers": publisher_rows,
+        "conferences": conference_rows,
+    }
+
+
+def build_publisher_rows(workbook) -> list[list[object]]:
+    worksheet = workbook[PUBLISHERS_WORKSHEET_NAME]
+    headers = [
+        clean_string(cell)
+        for cell in next(worksheet.iter_rows(min_row=1, max_row=1, values_only=True))
+    ]
+    header_index = {header: position for position, header in enumerate(headers)}
+    required_columns = {
+        "Final_Grade",
+        "Reliability_Score",
+        "JUFO_ISBNs",
+        "NOR_ISBNs",
+        "JUFO_JUFOLevel",
+        "NOR_NorwegianLevel",
+        "JUFO_Name",
+        "NOR_InternationalTitle",
+        "NOR_URL",
+        "Shared_ISBNs",
+    }
+    missing = [column for column in sorted(required_columns) if column not in header_index]
+    if missing:
+        raise ValueError(
+            f"Missing required columns in {PUBLISHERS_WORKSHEET_NAME}: {', '.join(missing)}"
+        )
+
+    rows: list[list[object]] = []
+    for raw in iter_rows(worksheet.iter_rows(min_row=2, values_only=True)):
+        jufo_name = clean_string(raw[header_index["JUFO_Name"]])
+        nor_title = clean_string(raw[header_index["NOR_InternationalTitle"]])
+        aliases = split_unique("|".join(value for value in [nor_title, jufo_name] if value), r"\|")
+        display_name = aliases[0] if aliases else ""
+        jufo_isbns = split_identifiers(raw[header_index["JUFO_ISBNs"]])
+        nor_isbns = split_identifiers(raw[header_index["NOR_ISBNs"]])
+        shared_isbns = split_identifiers(raw[header_index["Shared_ISBNs"]])
+        if not display_name and not jufo_isbns and not nor_isbns and not shared_isbns:
+            continue
+
+        rows.append(
+            [
+                display_name or "Untitled publisher",
+                aliases,
+                jufo_isbns,
+                nor_isbns,
+                shared_isbns,
+                clean_string(raw[header_index["JUFO_JUFOLevel"]]),
+                clean_string(raw[header_index["NOR_NorwegianLevel"]]),
+                clean_string(raw[header_index["Final_Grade"]]) or "Unranked",
+                maybe_float(raw[header_index["Reliability_Score"]]),
+                clean_string(raw[header_index["NOR_URL"]]),
+            ]
+        )
+
+    return rows
+
+
+def build_conference_rows(workbook) -> list[list[object]]:
+    worksheet = workbook[CONFERENCES_WORKSHEET_NAME]
+    headers = [
+        clean_string(cell)
+        for cell in next(worksheet.iter_rows(min_row=1, max_row=1, values_only=True))
+    ]
+    header_index = {header: position for position, header in enumerate(headers)}
+    required_columns = {
+        "canonical_issn",
+        "name of the conference",
+        "ORBIT Grade",
+        "uncertainty score",
+        "CORE rank",
+        "JUFO Level",
+        "Norwegian level",
+    }
+    missing = [column for column in sorted(required_columns) if column not in header_index]
+    if missing:
+        raise ValueError(
+            f"Missing required columns in {CONFERENCES_WORKSHEET_NAME}: {', '.join(missing)}"
+        )
+
+    rows: list[list[object]] = []
+    for raw in iter_rows(worksheet.iter_rows(min_row=2, values_only=True)):
+        name = clean_string(raw[header_index["name of the conference"]])
+        if not name:
+            continue
+
+        rows.append(
+            [
+                name,
+                split_issns(raw[header_index["canonical_issn"]]),
+                clean_string(raw[header_index["ORBIT Grade"]]) or "Unranked",
+                maybe_float(raw[header_index["uncertainty score"]]),
+                clean_string(raw[header_index["CORE rank"]]),
+                clean_string(raw[header_index["JUFO Level"]]),
+                clean_string(raw[header_index["Norwegian level"]]),
+            ]
+        )
+
+    return rows
 
 
 def to_site_url(path: Path) -> str:
@@ -736,7 +859,9 @@ def main() -> None:
 
     print(
         "Wrote site dataset with "
-        f"{len(rows_payload)} entries to {meta_output} and {records_output}"
+        f"{len(rows_payload['journals'])} journals, "
+        f"{len(rows_payload['conferences'])} conferences, and "
+        f"{len(rows_payload['publishers'])} publishers to {meta_output} and {records_output}"
     )
 
 

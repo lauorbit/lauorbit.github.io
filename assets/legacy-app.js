@@ -16,6 +16,27 @@
         grade: 8,
         uncertainty: 9,
     };
+    const PUBLISHER_ROW = {
+        name: 0,
+        aliases: 1,
+        jufoIsbns: 2,
+        norwegianIsbns: 3,
+        sharedIsbns: 4,
+        jufoLevel: 5,
+        norwegianLevel: 6,
+        grade: 7,
+        reliability: 8,
+        url: 9,
+    };
+    const CONFERENCE_ROW = {
+        name: 0,
+        issns: 1,
+        grade: 2,
+        uncertainty: 3,
+        coreRank: 4,
+        jufoLevel: 5,
+        norwegianLevel: 6,
+    };
 
     const FLAGS = payload.flagBits;
     const RESULTS_PER_PAGE = 50;
@@ -48,7 +69,11 @@
     const elements = {
         tabContainer: document.getElementById("tab-container"),
         journalInput: document.getElementById("journal-input"),
+        conferenceInput: document.getElementById("conference-input"),
+        publisherSearchInput: document.getElementById("publisher-search-input"),
         clearSearchBtn: document.getElementById("clear-search-btn"),
+        clearConferenceSearchBtn: document.getElementById("clear-conference-search-btn"),
+        clearPublisherSearchBtn: document.getElementById("clear-publisher-search-btn"),
         filterBtn: document.getElementById("filter-btn"),
         resetBtn: document.getElementById("reset-btn"),
         resultsContainer: document.getElementById("results-container"),
@@ -59,19 +84,31 @@
         openAccessSelect: document.getElementById("open-access-select"),
         sortSelect: document.getElementById("sort-select"),
         tabJournalSearch: document.getElementById("tab-journal-search"),
+        tabConferenceSearch: document.getElementById("tab-conference-search"),
+        tabPublisherSearch: document.getElementById("tab-publisher-search"),
         tabFilterSearch: document.getElementById("tab-filter-search"),
         tabAbout: document.getElementById("tab-about"),
         tabFaq: document.getElementById("tab-faq"),
         tabContact: document.getElementById("tab-contact"),
         panelJournalSearch: document.getElementById("panel-journal-search"),
+        panelConferenceSearch: document.getElementById("panel-conference-search"),
+        panelPublisherSearch: document.getElementById("panel-publisher-search"),
         panelFilterSearch: document.getElementById("panel-filter-search"),
         panelAbout: document.getElementById("panel-about"),
         panelFaq: document.getElementById("panel-faq"),
         panelContact: document.getElementById("panel-contact"),
+        aboutTabJournals: document.getElementById("about-tab-journals"),
+        aboutTabConferences: document.getElementById("about-tab-conferences"),
+        aboutTabPublishers: document.getElementById("about-tab-publishers"),
+        aboutPanelJournals: document.getElementById("about-panel-journals"),
+        aboutPanelConferences: document.getElementById("about-panel-conferences"),
+        aboutPanelPublishers: document.getElementById("about-panel-publishers"),
         aboutGradeTableBody: document.getElementById("about-grade-table-body"),
         aboutSummaryStats: document.getElementById("about-summary-stats"),
         faqJournalsMethodology: document.getElementById("faq-journals-methodology"),
         faqJournalsUsage: document.getElementById("faq-journals-usage"),
+        faqConferences: document.getElementById("faq-conferences"),
+        faqPublishers: document.getElementById("faq-publishers"),
     };
 
     const state = {
@@ -86,12 +123,16 @@
         loadMoreResults: null,
         selectsReady: false,
         tomSelect: {},
+        conferenceRecords: null,
+        publisherRecords: null,
         searchIndexesPromise: null,
         primaryTitleSearchIndex: null,
         titleVariantSearchIndex: null,
         issnSearchIndex: null,
         recordById: null,
         journalSearchDebounceId: null,
+        conferenceSearchDebounceId: null,
+        publisherSearchDebounceId: null,
         journalSearchRequestToken: 0,
     };
 
@@ -115,6 +156,21 @@
 
     function compactIssn(value) {
         return String(value || "").replace(/[^0-9xX]+/g, "").toUpperCase();
+    }
+
+    function uniqueValues(values) {
+        const results = [];
+        const seen = new Set();
+        values.forEach((value) => {
+            const text = String(value || "").trim();
+            const key = text.toLowerCase();
+            if (!text || seen.has(key)) {
+                return;
+            }
+            seen.add(key);
+            results.push(text);
+        });
+        return results;
     }
 
     function formatNumber(value) {
@@ -272,6 +328,51 @@
             openAccessLabel: row[ROW.openAccess] || "",
             grade: row[ROW.grade] || "Unranked",
             uncertainty: typeof row[ROW.uncertainty] === "number" ? row[ROW.uncertainty] : Number(row[ROW.uncertainty] || 0),
+        };
+    }
+
+    function buildConferenceRecord(row, index) {
+        const name = row[CONFERENCE_ROW.name] || "Untitled conference";
+        const issns = Array.isArray(row[CONFERENCE_ROW.issns]) ? row[CONFERENCE_ROW.issns] : [];
+        return {
+            id: index,
+            name,
+            displayName: toDisplayTitleCase(name),
+            normalizedName: normalizeText(name),
+            issns,
+            compactIssns: issns.map(compactIssn),
+            grade: row[CONFERENCE_ROW.grade] || "Unranked",
+            uncertainty: typeof row[CONFERENCE_ROW.uncertainty] === "number" ? row[CONFERENCE_ROW.uncertainty] : Number(row[CONFERENCE_ROW.uncertainty] || 0),
+            coreRank: row[CONFERENCE_ROW.coreRank] || "",
+            jufoLevel: row[CONFERENCE_ROW.jufoLevel] || "",
+            norwegianLevel: row[CONFERENCE_ROW.norwegianLevel] || "",
+        };
+    }
+
+    function buildPublisherRecord(row, index) {
+        const aliases = Array.isArray(row[PUBLISHER_ROW.aliases]) ? row[PUBLISHER_ROW.aliases] : splitPipeValues(row[PUBLISHER_ROW.name]);
+        const displayName = row[PUBLISHER_ROW.name] || aliases[0] || "Untitled publisher";
+        const jufoIsbns = Array.isArray(row[PUBLISHER_ROW.jufoIsbns]) ? row[PUBLISHER_ROW.jufoIsbns] : [];
+        const norwegianIsbns = Array.isArray(row[PUBLISHER_ROW.norwegianIsbns]) ? row[PUBLISHER_ROW.norwegianIsbns] : [];
+        const sharedIsbns = Array.isArray(row[PUBLISHER_ROW.sharedIsbns]) ? row[PUBLISHER_ROW.sharedIsbns] : [];
+        const allIsbns = uniqueValues([...jufoIsbns, ...norwegianIsbns, ...sharedIsbns]);
+        return {
+            id: index,
+            name: displayName,
+            displayName: toDisplayTitleCase(displayName),
+            aliases,
+            normalizedName: normalizeText(displayName),
+            normalizedAliases: aliases.map(normalizeText).filter(Boolean),
+            jufoIsbns,
+            norwegianIsbns,
+            sharedIsbns,
+            allIsbns,
+            compactIsbns: allIsbns.map(compactIssn),
+            jufoLevel: row[PUBLISHER_ROW.jufoLevel] || "",
+            norwegianLevel: row[PUBLISHER_ROW.norwegianLevel] || "",
+            grade: row[PUBLISHER_ROW.grade] || "Unranked",
+            reliability: typeof row[PUBLISHER_ROW.reliability] === "number" ? row[PUBLISHER_ROW.reliability] : Number(row[PUBLISHER_ROW.reliability] || 0),
+            url: row[PUBLISHER_ROW.url] || "",
         };
     }
 
@@ -449,6 +550,57 @@
         );
     }
 
+    function collectDirectorySearchResults(records, rawQuery, config) {
+        const normalizedQuery = normalizeText(rawQuery);
+        const identifierQuery = compactIssn(rawQuery);
+        const queryTokens = normalizedQuery ? normalizedQuery.split(/\s+/).filter(Boolean) : [];
+        const buckets = {
+            exactIdentifier: [],
+            exactText: [],
+            prefixText: [],
+            phraseText: [],
+            orderedTokens: [],
+            allTokens: [],
+        };
+
+        records.forEach((record) => {
+            const textValues = uniqueValues(config.textValues(record)).map(normalizeText).filter(Boolean);
+            const identifiers = uniqueValues(config.identifiers(record)).map(compactIssn).filter(Boolean);
+
+            if (identifierQuery && identifiers.some((identifier) => identifier === identifierQuery)) {
+                buckets.exactIdentifier.push(record);
+                return;
+            }
+            if (!normalizedQuery) {
+                return;
+            }
+            if (textValues.some((value) => value === normalizedQuery)) {
+                buckets.exactText.push(record);
+                return;
+            }
+            if (textValues.some((value) => value.startsWith(normalizedQuery))) {
+                buckets.prefixText.push(record);
+                return;
+            }
+            if (textValues.some((value) => value.includes(normalizedQuery))) {
+                buckets.phraseText.push(record);
+                return;
+            }
+            if (queryTokens.length > 1 && textValues.some((value) => hasOrderedTokenMatch(value, queryTokens))) {
+                buckets.orderedTokens.push(record);
+                return;
+            }
+            if (queryTokens.length > 1 && textValues.some((value) => queryTokens.every((token) => value.includes(token)))) {
+                buckets.allTokens.push(record);
+            }
+        });
+
+        const compare = config.compare;
+        return mergeRecordGroups(
+            ...Object.values(buckets).map((items) => [...items].sort(compare))
+        );
+    }
+
     async function ensureSearchIndexes() {
         if (state.primaryTitleSearchIndex && state.titleVariantSearchIndex && state.issnSearchIndex && state.recordById) {
             return {
@@ -544,15 +696,20 @@
         }
         if (!state.recordsPromise) {
             state.recordsPromise = (async () => {
-                if (!Array.isArray(globalThis.ORBIT_SITE_ROWS)) {
+                if (!globalThis.ORBIT_SITE_ROWS) {
                     await loadScriptOnce(payload.recordsScriptUrl);
                 }
                 const rawRows = globalThis.ORBIT_SITE_ROWS;
-                if (!Array.isArray(rawRows)) {
+                const journalRows = Array.isArray(rawRows) ? rawRows : rawRows && rawRows.journals;
+                const conferenceRows = rawRows && Array.isArray(rawRows.conferences) ? rawRows.conferences : [];
+                const publisherRows = rawRows && Array.isArray(rawRows.publishers) ? rawRows.publishers : [];
+                if (!Array.isArray(journalRows)) {
                     throw new Error("ORBIT site records are missing.");
                 }
-                const hydratedRecords = rawRows.map(buildRecord);
+                const hydratedRecords = journalRows.map(buildRecord);
                 state.records = hydratedRecords;
+                state.conferenceRecords = conferenceRows.map(buildConferenceRecord);
+                state.publisherRecords = publisherRows.map(buildPublisherRecord);
                 delete globalThis.ORBIT_SITE_ROWS;
                 return hydratedRecords;
             })().finally(() => {
@@ -562,8 +719,18 @@
         return state.recordsPromise;
     }
 
+    async function loadConferenceRecords() {
+        await loadRecords();
+        return state.conferenceRecords || [];
+    }
+
+    async function loadPublisherRecords() {
+        await loadRecords();
+        return state.publisherRecords || [];
+    }
+
     function showDataLoadError() {
-        elements.resultsContainer.innerHTML = '<p class="text-red-600 my-4">Unable to load journal data. Please try again.</p>';
+        elements.resultsContainer.innerHTML = '<p class="text-red-600 my-4">Unable to load ORBIT data. Please try again.</p>';
         elements.paginationContainer.innerHTML = "";
     }
 
@@ -616,11 +783,14 @@
     }
 
     function renderHomepageLink(record) {
-        const firstUrl = record.urls[0];
-        if (!firstUrl) {
+        return renderExternalUrl(record.urls[0]);
+    }
+
+    function renderExternalUrl(url, label = "Click here") {
+        if (!url) {
             return "N/A";
         }
-        return `<a href="${escapeHtml(firstUrl)}" target="_blank" rel="noreferrer" class="hyperlink">Click here${externalLinkIcon()}</a>`;
+        return `<a href="${escapeHtml(url)}" target="_blank" rel="noreferrer" class="hyperlink">${escapeHtml(label)}${externalLinkIcon()}</a>`;
     }
 
     function renderAsjcDetails(record) {
@@ -648,22 +818,23 @@
         const otherRanksHtml = ["ABDC", "AJG", "FNEGE", "VHB"].map((label) => {
             return `<p><strong>${escapeHtml(RATING_DISPLAY_NAMES[label] || label)}:</strong> ${escapeHtml(formatDisplayValue(record.ratingsMap[label]))}</p>`;
         }).join("");
+        const warningListMessage = "This indicates if the journal is listed in the Early Warning List published by the Chinese Academy of Sciences.";
         const warningListHtml = warningFlag
-            ? `<p class="text-red-600 font-semibold"><strong>Warning List${infoIcon("This indicates whether the journal is flagged by a warning or integrity signal in the updated ORBIT release.")}:</strong> Yes</p>`
-            : `<p><strong>Warning List${infoIcon("This indicates whether the journal is flagged by a warning or integrity signal in the updated ORBIT release.")}:</strong> No</p>`;
+            ? `<p class="text-red-600 font-semibold"><strong>Warning List${infoIcon(warningListMessage)}:</strong> Yes</p>`
+            : `<p><strong>Warning List${infoIcon(warningListMessage)}:</strong> No</p>`;
 
         contentWrapper.innerHTML = `
             <div class="space-y-2 text-sm text-gray-600 pt-3">
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-4">
                     <div>
                         <p><strong class="lau-green">ORBIT Rank:</strong> <span class="lau-green font-semibold">${escapeHtml(formatDisplayValue(record.grade))}</span></p>
-                        <p><strong>Elite Journal${infoIcon("This indicates whether the journal is tagged as elite in the current ORBIT release.")}:</strong> ${eliteStatus}</p>
+                        <p><strong>Elite Journal${infoIcon("This indicates if the journal is currently listed in the ARWU Shanghai, FT50, Nature Index, or UTD24 lists.")}:</strong> ${eliteStatus}</p>
                         ${warningListHtml}
                         <p><strong>Norwegian Level:</strong> ${escapeHtml(formatDisplayValue(record.ratingsMap.Norwegian))}</p>
                         <p><strong>JUFO Level:</strong> ${escapeHtml(formatDisplayValue(record.ratingsMap.JUFO))}</p>
                         ${otherRanksHtml}
                         <p><strong>Business Rankings${infoIcon("This indicates whether the entry is tagged for the business-oriented ranking signals available in ORBIT.")}:</strong> ${businessRanking}</p>
-                        <p><strong>Uncertainty Score${infoIcon("This score quantifies disagreement among the ranking systems. A lower score indicates stronger consensus.")}:</strong> ${uncertaintyScore}</p>
+                        <p><strong>Uncertainty Score${infoIcon("This score quantifies the disagreement among the ranking systems. A low score (e.g., below 0.1) indicates a reliable grade based on strong consensus, while a high score reveals conflicting views.")}:</strong> ${uncertaintyScore}</p>
                     </div>
                     <div>
                         <p><strong>ISSN1:</strong> ${escapeHtml(formatDisplayValue(record.issns[0]))}</p>
@@ -688,6 +859,57 @@
         card.className = "result-card bg-white rounded-lg shadow-md p-5";
         card.innerHTML = `<h3 class="text-xl font-bold text-gray-800 mb-3">${escapeHtml(record.displayTitle)}</h3>`;
         card.appendChild(createJournalDetailContent(record));
+        return card;
+    }
+
+    function createConferenceCard(record) {
+        const card = document.createElement("div");
+        const uncertaintyScore = Number.isFinite(record.uncertainty) ? record.uncertainty.toFixed(4) : "N/A";
+        card.className = "result-card bg-white rounded-lg shadow-md p-5";
+        card.innerHTML = `
+            <h3 class="text-xl font-bold text-gray-800 mb-3">${escapeHtml(record.displayName)}</h3>
+            <div class="space-y-2 text-sm text-gray-600 pt-3">
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-4">
+                    <div>
+                        <p><strong class="lau-green">ORBIT Rank:</strong> <span class="lau-green font-semibold">${escapeHtml(formatDisplayValue(record.grade))}</span></p>
+                        <p><strong>Uncertainty Score${infoIcon("This score quantifies disagreement among the conference ranking sources. A lower score indicates stronger consensus.")}:</strong> ${escapeHtml(uncertaintyScore)}</p>
+                        <p><strong>CORE Rank:</strong> ${escapeHtml(formatDisplayValue(record.coreRank))}</p>
+                    </div>
+                    <div>
+                        <p><strong>JUFO Level:</strong> ${escapeHtml(formatDisplayValue(record.jufoLevel))}</p>
+                        <p><strong>Norwegian Level:</strong> ${escapeHtml(formatDisplayValue(record.norwegianLevel))}</p>
+                        <p><strong>ISSN(s):</strong> ${escapeHtml(formatDisplayValue(record.issns))}</p>
+                    </div>
+                </div>
+            </div>
+        `;
+        return card;
+    }
+
+    function createPublisherCard(record) {
+        const card = document.createElement("div");
+        const reliabilityScore = Number.isFinite(record.reliability) && record.reliability > 0 ? record.reliability.toFixed(2) : "N/A";
+        const aliasText = record.aliases.length > 1 ? record.aliases.slice(1).join(" | ") : "";
+        card.className = "result-card bg-white rounded-lg shadow-md p-5";
+        card.innerHTML = `
+            <h3 class="text-xl font-bold text-gray-800 mb-3">${escapeHtml(record.displayName)}</h3>
+            <div class="space-y-2 text-sm text-gray-600 pt-3">
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-4">
+                    <div>
+                        <p><strong class="lau-green">ORBIT Publisher Grade:</strong> <span class="lau-green font-semibold">${escapeHtml(formatDisplayValue(record.grade))}</span></p>
+                        <p><strong>Reliability Score${infoIcon("This score summarizes the agreement and reliability signals available for this publisher in the current ORBIT release.")}:</strong> ${escapeHtml(reliabilityScore)}</p>
+                        <p><strong>JUFO Level:</strong> ${escapeHtml(formatDisplayValue(record.jufoLevel))}</p>
+                        <p><strong>Norwegian Level:</strong> ${escapeHtml(formatDisplayValue(record.norwegianLevel))}</p>
+                    </div>
+                    <div>
+                        <p><strong>Known Alias:</strong> ${escapeHtml(formatDisplayValue(aliasText))}</p>
+                        <p><strong>Shared ISBN(s):</strong> ${escapeHtml(formatDisplayValue(record.sharedIsbns))}</p>
+                        <p><strong>All ISBN(s):</strong> ${escapeHtml(formatDisplayValue(record.allIsbns))}</p>
+                        <p><strong>Homepage:</strong> ${renderExternalUrl(record.url)}</p>
+                    </div>
+                </div>
+            </div>
+        `;
         return card;
     }
 
@@ -739,6 +961,14 @@
             window.clearTimeout(state.journalSearchDebounceId);
             state.journalSearchDebounceId = null;
         }
+        if (state.conferenceSearchDebounceId !== null) {
+            window.clearTimeout(state.conferenceSearchDebounceId);
+            state.conferenceSearchDebounceId = null;
+        }
+        if (state.publisherSearchDebounceId !== null) {
+            window.clearTimeout(state.publisherSearchDebounceId);
+            state.publisherSearchDebounceId = null;
+        }
     }
 
     function showJournalSearchPrompt() {
@@ -746,6 +976,20 @@
         state.currentResults = [];
         clearSharedResults();
         elements.resultsContainer.innerHTML = '<p class="text-gray-600 italic my-4">Type a journal name or ISSN to search.</p>';
+    }
+
+    function showConferenceSearchPrompt() {
+        state.activeMode = "conference";
+        state.currentResults = [];
+        clearSharedResults();
+        elements.resultsContainer.innerHTML = '<p class="text-gray-600 italic my-4">Type a conference name or ISSN to search.</p>';
+    }
+
+    function showPublisherSearchPrompt() {
+        state.activeMode = "publisher";
+        state.currentResults = [];
+        clearSharedResults();
+        elements.resultsContainer.innerHTML = '<p class="text-gray-600 italic my-4">Type a publisher name or ISBN to search.</p>';
     }
 
     function queueJournalSearch({ immediate = false } = {}) {
@@ -757,6 +1001,30 @@
         state.journalSearchDebounceId = window.setTimeout(() => {
             state.journalSearchDebounceId = null;
             void runJournalSearch();
+        }, 250);
+    }
+
+    function queueConferenceSearch({ immediate = false } = {}) {
+        clearPendingJournalSearch();
+        if (immediate) {
+            void runConferenceSearch();
+            return;
+        }
+        state.conferenceSearchDebounceId = window.setTimeout(() => {
+            state.conferenceSearchDebounceId = null;
+            void runConferenceSearch();
+        }, 250);
+    }
+
+    function queuePublisherSearch({ immediate = false } = {}) {
+        clearPendingJournalSearch();
+        if (immediate) {
+            void runPublisherSearch();
+            return;
+        }
+        state.publisherSearchDebounceId = window.setTimeout(() => {
+            state.publisherSearchDebounceId = null;
+            void runPublisherSearch();
         }, 250);
     }
 
@@ -773,6 +1041,12 @@
 
     async function displayResults(isLoadMore = false) {
         const isFilterSearch = state.activeMode === "filter";
+        const resultLabels = {
+            journal: "journal",
+            filter: "result",
+            conference: "conference",
+            publisher: "publisher",
+        };
         const totalResults = Math.max(state.currentResultsTotal, state.currentResults.length);
 
         if (!isLoadMore) {
@@ -782,7 +1056,7 @@
 
             const statusMessage = document.createElement("p");
             statusMessage.className = "text-gray-600 italic my-4";
-            const label = isFilterSearch ? "result" : "journal";
+            const label = resultLabels[state.activeMode] || "result";
             statusMessage.textContent = `Found ${formatNumber(totalResults)} ${label}${totalResults === 1 ? "" : "s"}.`;
             elements.resultsContainer.appendChild(statusMessage);
         }
@@ -803,7 +1077,16 @@
 
         const resultsToShow = state.currentResults.slice(state.currentOffset, state.currentOffset + RESULTS_PER_PAGE);
         resultsToShow.forEach((record) => {
-            const card = isFilterSearch ? createFilterListItem(record, listContainer) : createJournalCard(record);
+            let card;
+            if (isFilterSearch) {
+                card = createFilterListItem(record, listContainer);
+            } else if (state.activeMode === "conference") {
+                card = createConferenceCard(record);
+            } else if (state.activeMode === "publisher") {
+                card = createPublisherCard(record);
+            } else {
+                card = createJournalCard(record);
+            }
             listContainer.appendChild(card);
         });
 
@@ -903,6 +1186,78 @@
         await displayResults();
     }
 
+    async function runConferenceSearch() {
+        const rawQuery = elements.conferenceInput.value.trim();
+        const requestToken = state.journalSearchRequestToken + 1;
+        state.journalSearchRequestToken = requestToken;
+
+        if (!rawQuery) {
+            showConferenceSearchPrompt();
+            return;
+        }
+
+        state.activeMode = "conference";
+        elements.resultsContainer.innerHTML = '<p class="text-gray-600 italic my-4">Searching conferences...</p>';
+        elements.paginationContainer.innerHTML = "";
+
+        try {
+            const records = await loadConferenceRecords();
+            if (requestToken !== state.journalSearchRequestToken) {
+                return;
+            }
+
+            state.currentResults = collectDirectorySearchResults(records, rawQuery, {
+                textValues: (record) => [record.name],
+                identifiers: (record) => record.issns,
+                compare: (left, right) => gradeValue(right.grade) - gradeValue(left.grade)
+                    || left.uncertainty - right.uncertainty
+                    || left.name.localeCompare(right.name),
+            });
+            state.currentResultsTotal = state.currentResults.length;
+            state.loadMoreResults = null;
+            await displayResults();
+        } catch (error) {
+            console.error(error);
+            showDataLoadError();
+        }
+    }
+
+    async function runPublisherSearch() {
+        const rawQuery = elements.publisherSearchInput.value.trim();
+        const requestToken = state.journalSearchRequestToken + 1;
+        state.journalSearchRequestToken = requestToken;
+
+        if (!rawQuery) {
+            showPublisherSearchPrompt();
+            return;
+        }
+
+        state.activeMode = "publisher";
+        elements.resultsContainer.innerHTML = '<p class="text-gray-600 italic my-4">Searching publishers...</p>';
+        elements.paginationContainer.innerHTML = "";
+
+        try {
+            const records = await loadPublisherRecords();
+            if (requestToken !== state.journalSearchRequestToken) {
+                return;
+            }
+
+            state.currentResults = collectDirectorySearchResults(records, rawQuery, {
+                textValues: (record) => [record.name, ...record.aliases],
+                identifiers: (record) => record.allIsbns,
+                compare: (left, right) => gradeValue(right.grade) - gradeValue(left.grade)
+                    || right.reliability - left.reliability
+                    || left.name.localeCompare(right.name),
+            });
+            state.currentResultsTotal = state.currentResults.length;
+            state.loadMoreResults = null;
+            await displayResults();
+        } catch (error) {
+            console.error(error);
+            showDataLoadError();
+        }
+    }
+
     async function runFilterSearch() {
         clearPendingJournalSearch();
         state.journalSearchRequestToken += 1;
@@ -976,12 +1331,14 @@
         clearPendingJournalSearch();
         state.journalSearchRequestToken += 1;
         state.activeTab = nextTab;
-        state.activeMode = nextTab === "filter" ? "filter" : "journal";
+        state.activeMode = nextTab;
         state.currentResults = [];
         clearSharedResults();
 
         const tabs = {
             journal: { button: elements.tabJournalSearch, panel: elements.panelJournalSearch },
+            conference: { button: elements.tabConferenceSearch, panel: elements.panelConferenceSearch },
+            publisher: { button: elements.tabPublisherSearch, panel: elements.panelPublisherSearch },
             filter: { button: elements.tabFilterSearch, panel: elements.panelFilterSearch },
             about: { button: elements.tabAbout, panel: elements.panelAbout },
             faq: { button: elements.tabFaq, panel: elements.panelFaq },
@@ -1013,6 +1370,20 @@
                 showJournalSearchPrompt();
             }
         }
+        if (nextTab === "conference") {
+            if (elements.conferenceInput.value.trim()) {
+                queueConferenceSearch({ immediate: true });
+            } else {
+                showConferenceSearchPrompt();
+            }
+        }
+        if (nextTab === "publisher") {
+            if (elements.publisherSearchInput.value.trim()) {
+                queuePublisherSearch({ immediate: true });
+            } else {
+                showPublisherSearchPrompt();
+            }
+        }
     }
 
     function renderAboutStats() {
@@ -1030,10 +1401,13 @@
             `;
         }).join("");
 
-        elements.aboutSummaryStats.textContent = `The grade distribution is based on ${formatNumber(payload.stats.gradedEntries)} journals ranked by ORBIT, excluding ${formatNumber(payload.stats.unrankedEntries)} unranked titles. The updated release maps ${formatNumber(payload.stats.asjcCount)} distinct ASJC classes.`;
+        elements.aboutSummaryStats.textContent = `The grade distribution is based on ${formatNumber(payload.stats.gradedEntries)} journals ranked by ORBIT, excluding ${formatNumber(payload.stats.unrankedEntries)} unranked titles. The updated release maps ${formatNumber(payload.stats.asjcCount)} distinct ASJC classes, plus ${formatNumber(payload.stats.conferenceEntries)} conferences and ${formatNumber(payload.stats.publisherEntries)} publishers in separate search tabs.`;
     }
 
     function renderFaqSection(container, items) {
+        if (!container) {
+            return;
+        }
         container.innerHTML = items.map((item) => `
             <div class="faq-item border rounded-md">
                 <div class="faq-question cursor-pointer flex justify-between items-center p-4 bg-gray-50 hover:bg-gray-100 transition">
@@ -1045,6 +1419,30 @@
                 </div>
             </div>
         `).join("");
+    }
+
+    function switchAboutTab(nextTab) {
+        const aboutTabs = {
+            journals: { button: elements.aboutTabJournals, panel: elements.aboutPanelJournals },
+            conferences: { button: elements.aboutTabConferences, panel: elements.aboutPanelConferences },
+            publishers: { button: elements.aboutTabPublishers, panel: elements.aboutPanelPublishers },
+        };
+
+        Object.values(aboutTabs).forEach(({ button, panel }) => {
+            if (button) {
+                button.classList.remove("active");
+            }
+            if (panel) {
+                panel.classList.add("hidden");
+            }
+        });
+
+        const selected = aboutTabs[nextTab];
+        if (!selected) {
+            return;
+        }
+        selected.button.classList.add("active");
+        selected.panel.classList.remove("hidden");
     }
 
     function attachFaqEvents() {
@@ -1118,12 +1516,48 @@
                 queueJournalSearch({ immediate: true });
             }
         });
+        elements.conferenceInput.addEventListener("input", () => {
+            if (state.activeTab !== "conference") {
+                return;
+            }
+            queueConferenceSearch();
+        });
+        elements.conferenceInput.addEventListener("keyup", (event) => {
+            if (event.key === "Enter") {
+                queueConferenceSearch({ immediate: true });
+            }
+        });
+        elements.publisherSearchInput.addEventListener("input", () => {
+            if (state.activeTab !== "publisher") {
+                return;
+            }
+            queuePublisherSearch();
+        });
+        elements.publisherSearchInput.addEventListener("keyup", (event) => {
+            if (event.key === "Enter") {
+                queuePublisherSearch({ immediate: true });
+            }
+        });
         elements.clearSearchBtn.addEventListener("click", () => {
             clearPendingJournalSearch();
             state.journalSearchRequestToken += 1;
             elements.journalInput.value = "";
             showJournalSearchPrompt();
             elements.journalInput.focus();
+        });
+        elements.clearConferenceSearchBtn.addEventListener("click", () => {
+            clearPendingJournalSearch();
+            state.journalSearchRequestToken += 1;
+            elements.conferenceInput.value = "";
+            showConferenceSearchPrompt();
+            elements.conferenceInput.focus();
+        });
+        elements.clearPublisherSearchBtn.addEventListener("click", () => {
+            clearPendingJournalSearch();
+            state.journalSearchRequestToken += 1;
+            elements.publisherSearchInput.value = "";
+            showPublisherSearchPrompt();
+            elements.publisherSearchInput.focus();
         });
 
         elements.filterBtn.addEventListener("click", () => {
@@ -1132,10 +1566,15 @@
         elements.resetBtn.addEventListener("click", resetFilterPanel);
 
         elements.tabJournalSearch.addEventListener("click", () => switchTab("journal"));
+        elements.tabConferenceSearch.addEventListener("click", () => switchTab("conference"));
+        elements.tabPublisherSearch.addEventListener("click", () => switchTab("publisher"));
         elements.tabFilterSearch.addEventListener("click", () => switchTab("filter"));
         elements.tabAbout.addEventListener("click", () => switchTab("about"));
         elements.tabFaq.addEventListener("click", () => switchTab("faq"));
         elements.tabContact.addEventListener("click", () => switchTab("contact"));
+        elements.aboutTabJournals.addEventListener("click", () => switchAboutTab("journals"));
+        elements.aboutTabConferences.addEventListener("click", () => switchAboutTab("conferences"));
+        elements.aboutTabPublishers.addEventListener("click", () => switchAboutTab("publishers"));
     }
 
     function init() {
@@ -1208,6 +1647,76 @@
             {
                 question: "How should a university or a promotion committee use the ORBIT rankings in practice?",
                 answer: `ORBIT is designed to be a tool that supports, rather than replaces, expert judgment, in line with the DORA and Leiden Manifesto principles. A committee could use the ORBIT grade as a primary indicator of a journal's overall standing. Crucially, they should also consider the Uncertainty Score. A high uncertainty score should prompt a deeper, qualitative review of the publication, as it indicates that the journal's quality is disputed. Using both metrics together provides a much more nuanced and defensible basis for evaluation than using a simple letter grade alone.`,
+            },
+        ]);
+
+        renderFaqSection(elements.faqConferences, [
+            {
+                question: "What is ORBIT for conferences in one sentence?",
+                answer: `ORBIT turns CORE, JUFO, and the Norwegian Register tiers into 0-100 scores, weights the systems by reliability, averages what is available (requiring at least two systems), and maps the result to a letter grade from A+ to D; Elite flags force A+.`,
+            },
+            {
+                question: "What does the uncertainty score mean?",
+                answer: `It is a simple confidence indicator. A low value close to 0 means the ranking systems agree with each other and/or place the conference near the top tiers. A high value close to 1 means the systems disagree, the conference is far from the top tiers, or the available evidence is limited. The uncertainty is reported on a normalized 0-1 scale to make comparisons across conferences easy and consistent.`,
+            },
+            {
+                question: "How is the uncertainty score computed in plain English?",
+                answer: `It combines two ingredients:<ul class="list-disc pl-5 mt-2"><li><strong>Spread:</strong> how far apart the 0-100 scores from CORE, JUFO, and the Norwegian system are.</li><li><strong>Tier gap:</strong> on average, how far the assigned tiers are from the very top tier.</li></ul>These pieces are blended into a single value and normalized to a 0-1 range so typical conferences do not appear artificially extreme.`,
+            },
+            {
+                question: "Does uncertainty change my grade?",
+                answer: `No. The letter grade from A+ to D comes from the weighted score plus any Elite override. Uncertainty is advisory; it helps you judge confidence and compare venues with the same grade.`,
+            },
+            {
+                question: "When does uncertainty go up because of missing data?",
+                answer: `We do not increase uncertainty when the only available systems are JUFO and the Norwegian Register. We add a small uncertainty bump only when a conference has CORE plus exactly one other system, because the evidence is thinner than when all three systems are available.`,
+            },
+            {
+                question: "What is a good uncertainty score?",
+                answer: `As a rule of thumb on the 0-1 scale:<ul class="list-disc pl-5 mt-2"><li><strong>0.00-0.25:</strong> very consistent evidence.</li><li><strong>0.25-0.55:</strong> normal or typical uncertainty.</li><li><strong>0.55-0.80:</strong> higher uncertainty, worth checking for disagreement across systems.</li><li><strong>0.80-1.00:</strong> very high uncertainty, usually strong disagreement or limited evidence.</li></ul>Lower is always better: a smaller uncertainty score means greater confidence in the assigned ORBIT grade.`,
+            },
+            {
+                question: "Why do some Elite conferences still show noticeable uncertainty?",
+                answer: `Elite only affects the grade by forcing A+. If the three systems disagree on tiers, or evidence is thin, the spread and tier gap can still produce a non-trivial uncertainty score. That transparency is intentional.`,
+            },
+            {
+                question: "Why are A+ grades concentrated in computer-science-related conferences?",
+                answer: `ORBIT reflects real differences in how conferences operate across disciplines. In computer-science-related fields, a small number of flagship conferences run highly competitive, journal-like peer review, with very low acceptance rates and strong community consensus on venue prestige. In most other fields, journals remain the primary venue for definitive research, so ORBIT is intentionally conservative with A+ conference grades outside computer-science-related fields.`,
+            },
+            {
+                question: "How is ORBIT for conferences different from ORBIT for journals?",
+                answer: `<ul class="list-disc pl-5"><li><strong>Reliability and aggregation:</strong> Journals use an external ground truth from Elite and Warning lists to compute system reliability and a pessimistic dual-weight average. Conferences learn reliability from Elite rows and use a single reliability-weighted average.</li><li><strong>Uncertainty and penalties:</strong> Journals rely on a weighted variance-style disagreement. Conferences use a hybrid spread plus tier-gap measure with a conditional penalty only for CORE plus one other system.</li></ul>`,
+            },
+        ]);
+
+        renderFaqSection(elements.faqPublishers, [
+            {
+                question: "How should I interpret publisher grades?",
+                answer: `Publisher grades mirror the journal rubric but are built from the overlap between the Finnish JUFO list and the Norwegian Register. A+ is reserved for the strongest joint endorsement, A and B capture high-quality overlap, C is the broad recognized mainstream tier, and D is the lowest graded tier. A D grade is not by itself a misconduct label; it means weak overlap-based evidence of high standing.`,
+            },
+            {
+                question: "What exactly are we ranking here?",
+                answer: `Scholarly book and monograph publishers only. This does not rank journals or conference outlets. Think university presses and specialist academic houses that publish peer-reviewed books.`,
+            },
+            {
+                question: "What data do we use?",
+                answer: `Two independent national publisher lists classify scholarly book publishers by level. ORBIT uses these as external signals of quality and peer review.`,
+            },
+            {
+                question: "How are grades assigned?",
+                answer: `Grades are assigned with a strict overlap rubric across the two lists. A+ means top level on both lists; A means top on one list and high on the other; B means mid/high combinations; C means credible but not high on either list; D means present but weak or uncertain. The rule is intentionally conservative and easy to audit.`,
+            },
+            {
+                question: "Do the 0-100 scores still matter?",
+                answer: `Only for context. ORBIT computes simple percentile-style scores per level to show where a level sits in the current data and to compute a disagreement metric. Letter grades come from the overlap rubric, not from those scores.`,
+            },
+            {
+                question: "How do you treat imprints, mergers, and series?",
+                answer: `Imprints are kept when they have distinct editorial control; otherwise they are rolled up to the parent. Mergers and renames are mapped to the current entity with a note. Book series are not ranked as publishers; ORBIT ranks the publisher behind the series.`,
+            },
+            {
+                question: "What about fields, languages, and edited volumes?",
+                answer: `ORBIT focuses on peer-reviewed scholarly monographs and edited volumes; trade and popular books are out. National lists can favor certain languages or regions, so the overlap of two lists helps reduce single-list bias.`,
             },
         ]);
 
