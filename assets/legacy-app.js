@@ -819,7 +819,7 @@
 
     function createJournalDetailContent(record) {
         const contentWrapper = document.createElement("div");
-        const uncertaintyScore = Number.isFinite(record.uncertainty) ? record.uncertainty.toFixed(2) : "N/A";
+        const uncertaintyScore = Number.isFinite(record.uncertainty) ? record.uncertainty.toFixed(4) : "N/A";
         const businessRanking = (record.flags & FLAGS.business) === FLAGS.business ? "Included" : "Excluded";
         const warningFlag = (record.flags & FLAGS.warning) === FLAGS.warning;
         const openAccessValue = isOpenAccess(record) ? (record.openAccessLabel || "Yes") : "No";
@@ -848,7 +848,7 @@
                         <p><strong>KI-JL Status${infoIcon("KI-JL is included in the ORBIT score only for journals with Life Sciences and Medicine ASJC codes.")}:</strong> ${kiWeightText}</p>
                         ${otherRanksHtml}
                         <p><strong>Business Rankings Status${infoIcon("This indicates whether the entry is tagged for the business-oriented ranking signals available in ORBIT. ABDC, AJG, FNEGE, and VHB are business-oriented sources; JUFO and Norwegian are broader journal sources. KI-JL is included only for Life Sciences and Medicine ASJC journals.")}:</strong> ${businessRanking}</p>
-                        <p><strong>Uncertainty Score${infoIcon("This score quantifies the disagreement among the ranking systems. A low score (e.g., below 0.1) indicates a reliable grade based on strong consensus, while a high score reveals conflicting views.")}:</strong> ${uncertaintyScore}</p>
+                        <p><strong>Uncertainty Score${infoIcon("This score quantifies disagreement among the ranking systems and is min-max normalized to a 0-1 scale across the current journal dataset. A low score (e.g., below 0.1) indicates strong consensus, while a high score reveals conflicting views.")}:</strong> ${uncertaintyScore}</p>
                     </div>
                     <div>
                         <p><strong>ISSN1:</strong> ${escapeHtml(formatDisplayValue(record.issns[0]))}</p>
@@ -886,7 +886,7 @@
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-4">
                     <div>
                         <p><strong class="lau-green">ORBIT Rank:</strong> <span class="lau-green font-semibold">${escapeHtml(formatDisplayValue(record.grade))}</span></p>
-                        <p><strong>Uncertainty Score${infoIcon("This score quantifies disagreement among the conference ranking sources. A lower score indicates stronger consensus.")}:</strong> ${escapeHtml(uncertaintyScore)}</p>
+                        <p><strong>Uncertainty Score${infoIcon("This score quantifies disagreement among the conference ranking sources and is min-max normalized to a 0-1 scale across the current conference dataset. A lower score indicates stronger consensus.")}:</strong> ${escapeHtml(uncertaintyScore)}</p>
                         <p><strong>CORE Rank:</strong> ${escapeHtml(formatDisplayValue(record.coreRank))}</p>
                     </div>
                     <div>
