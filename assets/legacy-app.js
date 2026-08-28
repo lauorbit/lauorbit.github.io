@@ -15,6 +15,10 @@
         openAccess: 7,
         grade: 8,
         uncertainty: 9,
+        baseGrade: 10,
+        kiWeightEligible: 11,
+        eliteLists: 12,
+        warningLists: 13,
     };
     const PUBLISHER_ROW = {
         name: 0,
@@ -51,11 +55,11 @@
         "Unranked": 0,
     };
     const GRADE_MEANINGS = {
-        "A+": "Represents journals of the highest tier, either by achieving a top percentile score or by being on the consolidated Elite List. Indicates universal recognition as a leading journal.",
+        "A+": "Represents journals of the highest tier by weighted ORBIT score, possibly after a one-step Elite List adjustment.",
         "A": "Denotes journals of excellent quality that fall just below the elite tier. These are highly regarded publications with a strong consensus.",
         "B": "Represents the broad, central tier of reputable and recognized academic journals. The majority of journals fall into this category.",
         "C": "Indicates journals that are recognized but fall below the median quality level of the overall academic landscape.",
-        "D": "Represents journals of the lowest tier, either by falling in the bottom percentile or by being on the warning list. This grade suggests significant quality or integrity concerns.",
+        "D": "Represents journals of the lowest tier by weighted ORBIT score, possibly after a one-step Warning List adjustment.",
     };
     const RATING_DISPLAY_NAMES = {
         "ABDC": "ABDC 2025",
@@ -64,6 +68,7 @@
         "FNEGE": "FNEGE 2025",
         "VHB": "VHB 2024",
         "Norwegian": "Norwegian Level",
+        "KI": "KI-JL Level",
     };
 
     const elements = {
@@ -328,6 +333,10 @@
             openAccessLabel: row[ROW.openAccess] || "",
             grade: row[ROW.grade] || "Unranked",
             uncertainty: typeof row[ROW.uncertainty] === "number" ? row[ROW.uncertainty] : Number(row[ROW.uncertainty] || 0),
+            baseGrade: row[ROW.baseGrade] || "Unranked",
+            kiWeightEligible: row[ROW.kiWeightEligible] === true,
+            eliteLists: Array.isArray(row[ROW.eliteLists]) ? row[ROW.eliteLists] : [],
+            warningLists: Array.isArray(row[ROW.warningLists]) ? row[ROW.warningLists] : [],
         };
     }
 
@@ -811,16 +820,19 @@
     function createJournalDetailContent(record) {
         const contentWrapper = document.createElement("div");
         const uncertaintyScore = Number.isFinite(record.uncertainty) ? record.uncertainty.toFixed(2) : "N/A";
-        const eliteStatus = (record.flags & FLAGS.elite) === FLAGS.elite ? "Yes" : "No";
         const businessRanking = (record.flags & FLAGS.business) === FLAGS.business ? "Included" : "Excluded";
         const warningFlag = (record.flags & FLAGS.warning) === FLAGS.warning;
         const openAccessValue = isOpenAccess(record) ? (record.openAccessLabel || "Yes") : "No";
+        const eliteListText = record.eliteLists.length ? record.eliteLists.join(" | ") : "N/A";
+        const eliteStatusText = record.eliteLists.length ? eliteListText : "No";
+        const warningListText = record.warningLists.length ? record.warningLists.join(" | ") : "N/A";
+        const kiWeightText = record.kiWeightEligible ? "Included" : "Excluded";
         const otherRanksHtml = ["ABDC", "AJG", "FNEGE", "VHB"].map((label) => {
             return `<p><strong>${escapeHtml(RATING_DISPLAY_NAMES[label] || label)}:</strong> ${escapeHtml(formatDisplayValue(record.ratingsMap[label]))}</p>`;
         }).join("");
-        const warningListMessage = "This indicates if the journal is listed in the Early Warning List published by the Chinese Academy of Sciences.";
+        const warningListMessage = "This indicates if the journal is listed in one or more Early Warning lists used by ORBIT. Warning status decreases the computed grade by one step when a base grade exists.";
         const warningListHtml = warningFlag
-            ? `<p class="text-red-600 font-semibold"><strong>Warning List${infoIcon(warningListMessage)}:</strong> Yes</p>`
+            ? `<p class="text-red-600 font-semibold"><strong>Warning List${infoIcon(warningListMessage)}:</strong> Yes (${escapeHtml(warningListText)})</p>`
             : `<p><strong>Warning List${infoIcon(warningListMessage)}:</strong> No</p>`;
 
         contentWrapper.innerHTML = `
@@ -828,12 +840,14 @@
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-4">
                     <div>
                         <p><strong class="lau-green">ORBIT Rank:</strong> <span class="lau-green font-semibold">${escapeHtml(formatDisplayValue(record.grade))}</span></p>
-                        <p><strong>Elite Journal${infoIcon("This indicates if the journal is currently listed in the ARWU Shanghai, FT50, Nature Index, or UTD24 lists.")}:</strong> ${eliteStatus}</p>
+                        <p><strong>Elite Journal${infoIcon("This indicates if the journal is currently listed in the Shanghai AES, FT50, Nature Index, or UTD lists. Elite status increases the computed grade by one step when a base grade exists.")}:</strong> ${escapeHtml(eliteStatusText)}</p>
                         ${warningListHtml}
                         <p><strong>Norwegian Level:</strong> ${escapeHtml(formatDisplayValue(record.ratingsMap.Norwegian))}</p>
                         <p><strong>JUFO Level:</strong> ${escapeHtml(formatDisplayValue(record.ratingsMap.JUFO))}</p>
+                        <p><strong>KI-JL Level:</strong> ${escapeHtml(formatDisplayValue(record.ratingsMap.KI))}</p>
+                        <p><strong>KI-JL Status${infoIcon("KI-JL is included in the ORBIT score only for journals with Life Sciences and Medicine ASJC codes.")}:</strong> ${kiWeightText}</p>
                         ${otherRanksHtml}
-                        <p><strong>Business Rankings${infoIcon("This indicates whether the entry is tagged for the business-oriented ranking signals available in ORBIT.")}:</strong> ${businessRanking}</p>
+                        <p><strong>Business Rankings Status${infoIcon("This indicates whether the entry is tagged for the business-oriented ranking signals available in ORBIT. ABDC, AJG, FNEGE, and VHB are business-oriented sources; JUFO and Norwegian are broader journal sources. KI-JL is included only for Life Sciences and Medicine ASJC journals.")}:</strong> ${businessRanking}</p>
                         <p><strong>Uncertainty Score${infoIcon("This score quantifies the disagreement among the ranking systems. A low score (e.g., below 0.1) indicates a reliable grade based on strong consensus, while a high score reveals conflicting views.")}:</strong> ${uncertaintyScore}</p>
                     </div>
                     <div>
@@ -1607,7 +1621,7 @@
             },
             {
                 question: "What are the Elite and Warning lists used for overrides?",
-                answer: `To ground our percentile-based grading in a real-world benchmark, we use a ground truth for the absolute top and bottom tiers. Elite status is based on a journal's inclusion in highly regarded international lists like the Nature Index, FT50, and UTD24. Warning status is based on inclusion in lists of predatory or questionable publications, such as the CAS Warning List. These are used to apply a final override, ensuring that journals with a universal reputation for excellence or poor quality are graded accordingly.`,
+                answer: `To ground our percentile-based grading in a real-world benchmark, we use a ground truth for the absolute top and bottom tiers. Elite status is based on a journal's inclusion in highly regarded international lists like the Nature Index, FT50, UTD, and Shanghai AES. Warning status is based on inclusion in lists of predatory or questionable publications, such as the CAS Warning List. These lists adjust the computed journal grade by one step when a base grade exists: Elite increases it by one step, and Warning decreases it by one step.`,
             },
             {
                 question: "How reliable is the ground truth dataset used to validate the ranking systems? Could different elite lists change the results?",
@@ -1626,7 +1640,7 @@
         renderFaqSection(elements.faqJournalsUsage, [
             {
                 question: "How is the ORBIT score for a non-business journal calculated, and is it as reliable as the score for a business journal?",
-                answer: `For journals outside of business and management, the ORBIT score is based primarily on the JUFO and Norwegian systems. Because these are the only comprehensive, multidisciplinary lists used, the consensus for non-business fields is less diversified than for business journals, which can be evaluated by up to six systems.`,
+                answer: `For journals outside of business and management, the ORBIT score is based primarily on the JUFO and Norwegian systems, plus KI-JL only when the journal has Life Sciences and Medicine ASJC codes. The consensus for non-business fields is still less diversified than for business journals, but KI-JL adds an expert-based health and life-science-oriented signal where it is disciplinarily relevant.`,
             },
             {
                 question: "Why doesn't a specific journal have an ORBIT rank?",
@@ -1642,7 +1656,7 @@
             },
             {
                 question: "Does the ORBIT system unintentionally penalize journals from non-English speaking regions or those with a strong regional focus?",
-                answer: `The ORBIT model is designed to mitigate this risk by including multiple international systems with different geographical focuses, such as VHB for the German-speaking world, FNEGE for France, and ABDC for the Asia-Pacific region. By aggregating these diverse perspectives, ORBIT is less likely to be biased by the perspective of any single region compared to relying on a single, globally dominant list. However, because the included lists are themselves predominantly European and Australian, some regional biases may still persist.`,
+                answer: `The ORBIT model is designed to mitigate this risk by including multiple international systems with different geographical focuses, such as VHB for the German-speaking world, FNEGE for France, ABDC for the Asia-Pacific region, and KI-JL from Karolinska Institutet. By aggregating these diverse perspectives, ORBIT is less likely to be biased by the perspective of any single region compared to relying on a single, globally dominant list. However, because the included lists still have regional and disciplinary emphases, some biases may persist.`,
             },
             {
                 question: "How should a university or a promotion committee use the ORBIT rankings in practice?",

@@ -26,17 +26,19 @@ RATING_COLUMNS = [
     ("FNEGE", "FNEGE: FNEGE_2025"),
     ("VHB", "VHB: Grade (Converted)"),
     ("Norwegian", "Norwegian Level"),
+    ("KI", "KI: Level"),
 ]
 RANK_ORDERS = {
     "ABDC": ["C", "B", "A", "A*"],
     "AJG": ["D", "C", "B", "A", "A+"],
     "FNEGE": ["D", "C", "B", "A", "A+"],
     "JUFO": ["0", "1", "2", "3"],
+    "KI": ["0", "1", "2", "3"],
     "Norwegian": ["0", "1", "2"],
     "ORBIT": ["D", "C", "B", "A", "A+"],
     "VHB": ["D", "C", "B", "A", "A+"],
 }
-NUMERIC_RANK_SYSTEMS = {"JUFO", "Norwegian"}
+NUMERIC_RANK_SYSTEMS = {"JUFO", "Norwegian", "KI"}
 JUFO_ZERO_ALIASES = {
     "OTHERIDENTIFIEDPUBLICATIONCHANNELS",
     "OTHERIDENTIFIEDPUBLICATIONCHANNEL",
@@ -90,6 +92,14 @@ RANKING_CHART_SYSTEMS = [
         "column": "Level",
         "color": "#38A169",
         "description": "Current-year Norwegian journal entries excluding conference proceedings and series.",
+    },
+    {
+        "key": "KI",
+        "label": "KI-JL",
+        "filename": "KI_Journal_List_2026.xlsx",
+        "column": "Level",
+        "color": "#0F766E",
+        "description": "Karolinska Institutet Journal List (KI-JL) 2026 levels.",
     },
     {
         "key": "VHB",
@@ -426,6 +436,7 @@ def build_ranking_distributions(
     databases_dir: Path,
     current_year: int,
     orbit_grade_counts: Counter[str],
+    fallback_rank_counts: dict[str, Counter[str]],
 ) -> dict[str, object]:
     systems_payload: list[dict[str, object]] = []
     shared_x_values: list[float] | None = None
@@ -435,7 +446,9 @@ def build_ranking_distributions(
         source_path = databases_dir / config["filename"]
         rank_counts: Counter[str] = Counter()
 
-        if system == "JUFO":
+        if not source_path.exists():
+            rank_counts.update(fallback_rank_counts.get(system, Counter()))
+        elif system == "JUFO":
             for record in iter_csv_records(source_path, delimiter=","):
                 if clean_string(record.get("Type_en")) != "Series":
                     continue
@@ -587,7 +600,11 @@ def build_payload(
             "Open Access Status",
             "Business Journal",
             "Is Elite Journal",
+            "Elite Journal Lists",
             "Is Warning Journal",
+            "Warning Journal Lists",
+            "KI Weight Eligible",
+            "ORBIT_Base_Grade",
             "ORBIT_Grade",
             "Uncertainty Score",
             *[column for _, column in RATING_COLUMNS],
@@ -599,6 +616,10 @@ def build_payload(
         asjc_lookup = load_asjc_lookup(scopus_path)
         rows: list[list[object]] = []
         grade_counts: Counter[str] = Counter()
+        source_rank_counts: dict[str, Counter[str]] = {
+            label: Counter()
+            for label, _ in RATING_COLUMNS
+        }
         asjc_counts: Counter[str] = Counter()
         publisher_options: set[str] = set()
 
@@ -618,6 +639,10 @@ def build_payload(
             business = is_truthy(raw[header_index["Business Journal"]])
             elite = is_truthy(raw[header_index["Is Elite Journal"]])
             warning = is_truthy(raw[header_index["Is Warning Journal"]])
+            elite_lists = split_unique(raw[header_index["Elite Journal Lists"]], r"\|")
+            warning_lists = split_unique(raw[header_index["Warning Journal Lists"]], r"\|")
+            ki_weight_eligible = is_truthy(raw[header_index["KI Weight Eligible"]])
+            base_grade = clean_string(raw[header_index["ORBIT_Base_Grade"]])
             grade = clean_string(raw[header_index["ORBIT_Grade"]])
             uncertainty = maybe_float(raw[header_index["Uncertainty Score"]])
             title_variants = split_unique(title, r"\|")
@@ -625,6 +650,10 @@ def build_payload(
                 label: clean_string(raw[header_index[column]])
                 for label, column in RATING_COLUMNS
             }
+            for label, _ in RATING_COLUMNS:
+                token = normalize_rank(ratings_map[label], label)
+                if token is not None:
+                    source_rank_counts[label][token] += 1
             ratings = [ratings_map[label] for label, _ in RATING_COLUMNS]
 
             flags = 0
@@ -656,6 +685,10 @@ def build_payload(
                     open_access_label,
                     grade,
                     uncertainty,
+                    base_grade,
+                    ki_weight_eligible,
+                    elite_lists,
+                    warning_lists,
                 ]
             )
 
@@ -668,6 +701,7 @@ def build_payload(
         databases_dir,
         current_year,
         grade_counts,
+        source_rank_counts,
     )
     client_ranking_distributions = {
         "xValues": ranking_distributions["xValues"],

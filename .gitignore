@@ -1,0 +1,9 @@
+.DS_Store
+__pycache__/
+*.py[cod]
+*.inspect.ndjson
+.playwright-cli/
+
+# Local ORBIT audit and backup workbooks; keep only ORBIT.xlsx in the site repository.
+ORBIT_backup_before_*.xlsx
+ORBIT_KI_grade_changes*.xlsx
