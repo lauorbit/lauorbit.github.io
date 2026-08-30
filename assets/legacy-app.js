@@ -55,11 +55,11 @@
         "Unranked": 0,
     };
     const GRADE_MEANINGS = {
-        "A+": "Represents journals of the highest tier by weighted ORBIT score, possibly after a one-step Elite List adjustment.",
+        "A+": "The highest ORBIT tier, based on the score-derived grade after any one-level list adjustment.",
         "A": "Denotes journals of excellent quality that fall just below the elite tier. These are highly regarded publications with a strong consensus.",
         "B": "Represents the broad, central tier of reputable and recognized academic journals. The majority of journals fall into this category.",
         "C": "Indicates journals that are recognized but fall below the median quality level of the overall academic landscape.",
-        "D": "Represents journals of the lowest tier by weighted ORBIT score, possibly after a one-step Warning List adjustment.",
+        "D": "The lowest ORBIT tier after any one-level list adjustment. A D grade is not, by itself, a finding of misconduct or predatory behavior.",
     };
     const RATING_DISPLAY_NAMES = {
         "ABDC": "ABDC 2025",
@@ -830,7 +830,7 @@
         const otherRanksHtml = ["ABDC", "AJG", "FNEGE", "VHB"].map((label) => {
             return `<p><strong>${escapeHtml(RATING_DISPLAY_NAMES[label] || label)}:</strong> ${escapeHtml(formatDisplayValue(record.ratingsMap[label]))}</p>`;
         }).join("");
-        const warningListMessage = "This indicates if the journal is listed in one or more Early Warning lists used by ORBIT. Warning status decreases the computed grade by one step when a base grade exists.";
+        const warningListMessage = "This indicates whether the journal is on the CAS Early Warning Journal List. Warning status lowers the score-based grade by one level when a base grade exists; if the journal is also on an Elite List, neither adjustment is applied.";
         const warningListHtml = warningFlag
             ? `<p class="text-red-600 font-semibold"><strong>Warning List${infoIcon(warningListMessage)}:</strong> Yes (${escapeHtml(warningListText)})</p>`
             : `<p><strong>Warning List${infoIcon(warningListMessage)}:</strong> No</p>`;
@@ -840,7 +840,7 @@
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-4">
                     <div>
                         <p><strong class="lau-green">ORBIT Rank:</strong> <span class="lau-green font-semibold">${escapeHtml(formatDisplayValue(record.grade))}</span></p>
-                        <p><strong>Elite Journal${infoIcon("This indicates if the journal is currently listed in the Shanghai AES, FT50, Nature Index, or UTD lists. Elite status increases the computed grade by one step when a base grade exists.")}:</strong> ${escapeHtml(eliteStatusText)}</p>
+                        <p><strong>Elite Journal${infoIcon("This indicates whether the journal is on the ARWU, FT50, Nature Index, or UTD24 Elite lists. Elite status raises the score-based grade by one level when a base grade exists; if the journal is also on the Warning List, neither adjustment is applied.")}:</strong> ${escapeHtml(eliteStatusText)}</p>
                         ${warningListHtml}
                         <p><strong>Norwegian Level:</strong> ${escapeHtml(formatDisplayValue(record.ratingsMap.Norwegian))}</p>
                         <p><strong>JUFO Level:</strong> ${escapeHtml(formatDisplayValue(record.ratingsMap.JUFO))}</p>
@@ -848,7 +848,7 @@
                         <p><strong>KI-JL Status${infoIcon("KI-JL is included in the ORBIT score only for journals with Life Sciences and Medicine ASJC codes.")}:</strong> ${kiWeightText}</p>
                         ${otherRanksHtml}
                         <p><strong>Business Rankings Status${infoIcon("This indicates whether the entry is tagged for the business-oriented ranking signals available in ORBIT. ABDC, AJG, FNEGE, and VHB are business-oriented sources; JUFO and Norwegian are broader journal sources. KI-JL is included only for Life Sciences and Medicine ASJC journals.")}:</strong> ${businessRanking}</p>
-                        <p><strong>Uncertainty Score${infoIcon("This score quantifies disagreement among the ranking systems and is min-max normalized to a 0-1 scale across the current journal dataset. A low score (e.g., below 0.1) indicates strong consensus, while a high score reveals conflicting views.")}:</strong> ${uncertaintyScore}</p>
+                        <p><strong>Uncertainty Score${infoIcon("This descriptive score measures weighted cross-system disagreement and is min-max normalized to a 0-1 scale. Lower values indicate greater agreement; it does not change the journal grade.")}:</strong> ${uncertaintyScore}</p>
                     </div>
                     <div>
                         <p><strong>ISSN1:</strong> ${escapeHtml(formatDisplayValue(record.issns[0]))}</p>
@@ -1609,7 +1609,7 @@
             },
             {
                 question: "Why are major indexing databases such as Scopus or Web of Science not included as a ranking system?",
-                answer: `Indexing databases serve a different, albeit critical, function: they verify a journal's existence and discoverability, not its quality. Inclusion standards can vary, and presence in an index does not equate to academic reputation. ORBIT focuses on systems that actively assess and rank journals based on quality, not just on their inclusion in a database.`,
+                answer: `Indexing databases are not treated as journal-quality ranking systems. ORBIT nevertheless uses Scopus data for journal metadata and the All Science Journal Classification (ASJC), which guides field classification and the selection of relevant ranking systems. Presence in an index does not itself determine an ORBIT score or grade.`,
             },
             {
                 question: "Why are other national ranking systems like the Danish list or HCERES (France) not included?",
@@ -1621,7 +1621,7 @@
             },
             {
                 question: "What are the Elite and Warning lists used for overrides?",
-                answer: `To ground our percentile-based grading in a real-world benchmark, we use a ground truth for the absolute top and bottom tiers. Elite status is based on a journal's inclusion in highly regarded international lists like the Nature Index, FT50, UTD, and Shanghai AES. Warning status is based on inclusion in lists of predatory or questionable publications, such as the CAS Warning List. These lists adjust the computed journal grade by one step when a base grade exists: Elite increases it by one step, and Warning decreases it by one step.`,
+                answer: `Elite status is based on ARWU, FT50, Nature Index, and UTD24; Warning status is based on the CAS Early Warning Journal List. These are grade-adjustment lists, not scoring systems, and they do not satisfy the two-system coverage requirement. After the score-based grade is assigned, Elite raises it by one level and Warning lowers it by one level, capped at A+ and floored at D. If a journal appears on both lists, no adjustment is applied.`,
             },
             {
                 question: "How reliable is the ground truth dataset used to validate the ranking systems? Could different elite lists change the results?",
@@ -1629,7 +1629,7 @@
             },
             {
                 question: "How does ORBIT perform compared to existing journal ranking systems?",
-                answer: `ORBIT consistently outperforms individual ranking systems in both stability and accuracy. By aggregating multiple expert-based lists through a reliability-weighted, pessimistic approach, it generates a consensus score that reflects the central point of agreement across systems. Internal coherence analysis shows that ORBIT's average error against a simple consensus is nearly ten times lower than that of the next-best system, demonstrating that it is not just a compromise, but a statistically superior representation.`,
+                answer: `ORBIT combines multiple expert-based ranking systems into a reliability-weighted consensus designed to reduce sensitivity to the perspective of any single system. Its score, grade, and uncertainty measure summarize the available cross-system evidence; the current website does not present them as a published comparative validation against every source system.`,
             },
             {
                 question: "How often is the ORBIT system updated?",
@@ -1648,7 +1648,7 @@
             },
             {
                 question: "How should I interpret the Uncertainty Score?",
-                answer: `The Uncertainty Score measures how much the different ranking systems disagree about a journal's quality. A low score (for example, below 0.1) is excellent. It indicates a strong consensus, meaning the ORBIT grade is very reliable. A high score (for example, above 0.4) is a warning flag. It means the ranking systems have conflicting opinions, so while the ORBIT grade represents the mathematical average, it should be interpreted with caution.`,
+                answer: `The Uncertainty Score measures disagreement among the eligible ranking systems. It is calculated from the weighted cross-system variation and min–max normalized to a 0–1 scale. Lower values indicate greater agreement and higher values indicate greater disagreement. The measure is descriptive and does not change the journal's grade.`,
             },
             {
                 question: "My journal has a good ORBIT grade (for example, A) but a high uncertainty score. How should I interpret this?",
