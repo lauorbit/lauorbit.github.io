@@ -47,6 +47,62 @@ h4 {
     border-left: 5px solid #006751;
 }
 
+.result-card.elite-journal {
+    border-left-color: #174ea6;
+    background-color: #f3f7fd;
+}
+
+.elite-journal .lau-green {
+    color: #174ea6;
+}
+
+.elite-journal .summary-item[aria-expanded="true"],
+.elite-journal .detail-view {
+    background-color: #f3f7fd;
+    border-color: #b9cef0;
+}
+
+.elite-journal .summary-item[aria-expanded="true"] {
+    border-left: 5px solid #174ea6;
+}
+
+.summary-item:focus-visible {
+    outline: 2px solid #174ea6;
+    outline-offset: 2px;
+}
+
+.directory-filters {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) auto;
+    align-items: end;
+    gap: 1rem;
+}
+
+.directory-filters > * {
+    min-width: 0;
+}
+
+.directory-filters.publisher-filters {
+    grid-template-columns: minmax(0, 1fr) auto;
+    max-width: 38rem;
+}
+
+.native-multi-select {
+    width: 100%;
+    min-height: 5rem;
+    padding: 0.5rem;
+    border: 1px solid #d1d5db;
+    border-radius: 0.375rem;
+    background-color: white;
+}
+
+@media (max-width: 640px) {
+    .directory-filters,
+    .directory-filters.publisher-filters {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
 .filter-label {
     font-weight: 500;
     color: #374151;
@@ -207,4 +263,13 @@ h4 {
     .about-distribution-frame {
         height: 820px;
     }
+}
+
+.journal-filter-actions {
+    grid-column: 1 / -1;
+}
+
+.journal-filter-actions button {
+    width: auto;
+    white-space: nowrap;
 }

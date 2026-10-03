@@ -40,6 +40,7 @@
         coreRank: 4,
         jufoLevel: 5,
         norwegianLevel: 6,
+        researchAreas: 7,
     };
 
     const FLAGS = payload.flagBits;
@@ -76,6 +77,12 @@
         journalInput: document.getElementById("journal-input"),
         conferenceInput: document.getElementById("conference-input"),
         publisherSearchInput: document.getElementById("publisher-search-input"),
+        conferenceGradeSelect: document.getElementById("conference-grade-select"),
+        conferenceAreaSelect: document.getElementById("conference-area-select"),
+        conferenceAreaHelp: document.getElementById("conference-area-help"),
+        publisherGradeSelect: document.getElementById("publisher-grade-select"),
+        resetConferenceBtn: document.getElementById("reset-conference-btn"),
+        resetPublisherBtn: document.getElementById("reset-publisher-btn"),
         clearSearchBtn: document.getElementById("clear-search-btn"),
         clearConferenceSearchBtn: document.getElementById("clear-conference-search-btn"),
         clearPublisherSearchBtn: document.getElementById("clear-publisher-search-btn"),
@@ -91,14 +98,12 @@
         tabJournalSearch: document.getElementById("tab-journal-search"),
         tabConferenceSearch: document.getElementById("tab-conference-search"),
         tabPublisherSearch: document.getElementById("tab-publisher-search"),
-        tabFilterSearch: document.getElementById("tab-filter-search"),
         tabAbout: document.getElementById("tab-about"),
         tabFaq: document.getElementById("tab-faq"),
         tabContact: document.getElementById("tab-contact"),
         panelJournalSearch: document.getElementById("panel-journal-search"),
         panelConferenceSearch: document.getElementById("panel-conference-search"),
         panelPublisherSearch: document.getElementById("panel-publisher-search"),
-        panelFilterSearch: document.getElementById("panel-filter-search"),
         panelAbout: document.getElementById("panel-about"),
         panelFaq: document.getElementById("panel-faq"),
         panelContact: document.getElementById("panel-contact"),
@@ -127,6 +132,10 @@
         currentResultsTotal: 0,
         loadMoreResults: null,
         selectsReady: false,
+        journalBrowseAll: false,
+        directorySelectsReady: false,
+        conferenceAreasReady: false,
+        conferenceAreasPromise: null,
         tomSelect: {},
         conferenceRecords: null,
         publisherRecords: null,
@@ -161,6 +170,10 @@
 
     function compactIssn(value) {
         return String(value || "").replace(/[^0-9xX]+/g, "").toUpperCase();
+    }
+
+    function isCompleteIssnQuery(value) {
+        return /^\d{4}[\s-]?\d{3}[\dX]$/i.test(String(value).trim());
     }
 
     function uniqueValues(values) {
@@ -235,6 +248,32 @@
 
     function isOpenAccess(record) {
         return (record.flags & FLAGS.openAccess) === FLAGS.openAccess;
+    }
+
+    function isEliteJournal(record) {
+        return (record.flags & FLAGS.elite) === FLAGS.elite;
+    }
+
+    function isWarningJournal(record) {
+        return (record.flags & FLAGS.warning) === FLAGS.warning;
+    }
+
+    function selectedValues(element) {
+        return new Set(Array.from(element.selectedOptions, (option) => option.value));
+    }
+
+    function clearSelect(element) {
+        if (element.tomselect) {
+            element.tomselect.clear(true);
+        } else {
+            Array.from(element.options).forEach((option) => { option.selected = false; });
+        }
+    }
+
+    function matchesJournalGradeSelection(record, selectedGrades) {
+        return !selectedGrades.size || selectedGrades.has(record.grade)
+            || (selectedGrades.has("Elite") && isEliteJournal(record))
+            || (selectedGrades.has("Warning list") && isWarningJournal(record));
     }
 
     function infoIcon(message) {
@@ -355,6 +394,7 @@
             coreRank: row[CONFERENCE_ROW.coreRank] || "",
             jufoLevel: row[CONFERENCE_ROW.jufoLevel] || "",
             norwegianLevel: row[CONFERENCE_ROW.norwegianLevel] || "",
+            researchAreas: Array.isArray(row[CONFERENCE_ROW.researchAreas]) ? uniqueValues(row[CONFERENCE_ROW.researchAreas]) : [],
         };
     }
 
@@ -380,7 +420,8 @@
             jufoLevel: row[PUBLISHER_ROW.jufoLevel] || "",
             norwegianLevel: row[PUBLISHER_ROW.norwegianLevel] || "",
             grade: row[PUBLISHER_ROW.grade] || "Unranked",
-            reliability: typeof row[PUBLISHER_ROW.reliability] === "number" ? row[PUBLISHER_ROW.reliability] : Number(row[PUBLISHER_ROW.reliability] || 0),
+            reliability: row[PUBLISHER_ROW.reliability] === null || row[PUBLISHER_ROW.reliability] === undefined || row[PUBLISHER_ROW.reliability] === ""
+                ? NaN : Number(row[PUBLISHER_ROW.reliability]),
             url: row[PUBLISHER_ROW.url] || "",
         };
     }
@@ -668,6 +709,9 @@
         const normalizedQuery = normalizeText(rawQuery);
         const issnQuery = compactIssn(rawQuery);
         const linearBuckets = collectLinearSearchBuckets(state.records, normalizedQuery, issnQuery);
+        if (isCompleteIssnQuery(rawQuery) && linearBuckets.exactIssn.length) {
+            return linearBuckets.exactIssn;
+        }
         const searchLimit = state.records.length;
         const primaryTitleIds = normalizedQuery
             ? normalizeSearchIds(indexes.primaryTitle.search(normalizedQuery, searchLimit, { suggest: true }))
@@ -824,7 +868,7 @@
         const warningFlag = (record.flags & FLAGS.warning) === FLAGS.warning;
         const openAccessValue = isOpenAccess(record) ? (record.openAccessLabel || "Yes") : "No";
         const eliteListText = record.eliteLists.length ? record.eliteLists.join(" | ") : "N/A";
-        const eliteStatusText = record.eliteLists.length ? eliteListText : "No";
+        const eliteStatusText = record.eliteLists.length ? eliteListText : (isEliteJournal(record) ? "Yes" : "No");
         const warningListText = record.warningLists.length ? record.warningLists.join(" | ") : "N/A";
         const kiWeightText = record.kiWeightEligible ? "Included" : "Excluded";
         const otherRanksHtml = ["ABDC", "AJG", "FNEGE", "VHB"].map((label) => {
@@ -871,6 +915,7 @@
     function createJournalCard(record) {
         const card = document.createElement("div");
         card.className = "result-card bg-white rounded-lg shadow-md p-5";
+        card.classList.toggle("elite-journal", isEliteJournal(record) && !isWarningJournal(record));
         card.innerHTML = `<h3 class="text-xl font-bold text-gray-800 mb-3">${escapeHtml(record.displayTitle)}</h3>`;
         card.appendChild(createJournalDetailContent(record));
         return card;
@@ -893,6 +938,7 @@
                         <p><strong>JUFO Level:</strong> ${escapeHtml(formatDisplayValue(record.jufoLevel))}</p>
                         <p><strong>Norwegian Level:</strong> ${escapeHtml(formatDisplayValue(record.norwegianLevel))}</p>
                         <p><strong>ISSN(s):</strong> ${escapeHtml(formatDisplayValue(record.issns))}</p>
+                        <p><strong>Research Area(s) (CORE):</strong> ${escapeHtml(record.researchAreas.length ? record.researchAreas.join(" | ") : "Not classified")}</p>
                     </div>
                 </div>
             </div>
@@ -902,7 +948,7 @@
 
     function createPublisherCard(record) {
         const card = document.createElement("div");
-        const reliabilityScore = Number.isFinite(record.reliability) && record.reliability > 0 ? record.reliability.toFixed(2) : "N/A";
+        const reliabilityScore = Number.isFinite(record.reliability) && record.reliability >= 0 ? record.reliability.toFixed(5) : "N/A";
         const aliasText = record.aliases.length > 1 ? record.aliases.slice(1).join(" | ") : "";
         card.className = "result-card bg-white rounded-lg shadow-md p-5";
         card.innerHTML = `
@@ -911,7 +957,7 @@
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-4">
                     <div>
                         <p><strong class="lau-green">ORBIT Publisher Grade:</strong> <span class="lau-green font-semibold">${escapeHtml(formatDisplayValue(record.grade))}</span></p>
-                        <p><strong>Reliability Score${infoIcon("This score summarizes the agreement and reliability signals available for this publisher in the current ORBIT release.")}:</strong> ${escapeHtml(reliabilityScore)}</p>
+                        <p><strong>Reliability Score (0–1)${infoIcon("This disagreement measure is the absolute difference between the JUFO and Norwegian percentile scores, divided by 100. Lower values indicate stronger agreement. It does not change the publisher grade.")}:</strong> ${escapeHtml(reliabilityScore)}</p>
                         <p><strong>JUFO Level:</strong> ${escapeHtml(formatDisplayValue(record.jufoLevel))}</p>
                         <p><strong>Norwegian Level:</strong> ${escapeHtml(formatDisplayValue(record.norwegianLevel))}</p>
                     </div>
@@ -929,8 +975,13 @@
 
     function createFilterListItem(record, listContainer) {
         const wrapper = document.createElement("div");
+        wrapper.classList.toggle("elite-journal", isEliteJournal(record) && !isWarningJournal(record));
         const summaryItem = document.createElement("div");
         summaryItem.className = "summary-item flex justify-between items-center p-3 border rounded-md";
+        summaryItem.setAttribute("role", "button");
+        summaryItem.setAttribute("tabindex", "0");
+        summaryItem.setAttribute("aria-expanded", "false");
+        summaryItem.setAttribute("aria-controls", `journal-detail-${record.id}`);
         summaryItem.innerHTML = `
             <div>
                 <p class="text-xs uppercase text-gray-500 tracking-wide">Journal</p>
@@ -942,19 +993,29 @@
         `;
 
         const detailItem = document.createElement("div");
+        detailItem.id = `journal-detail-${record.id}`;
         detailItem.className = "hidden p-4 border border-t-0 rounded-b-md bg-gray-50 detail-view";
         detailItem.appendChild(createJournalDetailContent(record));
 
-        summaryItem.addEventListener("click", () => {
+        const toggleDetails = () => {
             const allDetails = listContainer.querySelectorAll(".detail-view");
             allDetails.forEach((detail) => {
                 if (detail !== detailItem && !detail.classList.contains("hidden")) {
                     detail.classList.add("hidden");
                     detail.previousElementSibling.classList.remove("rounded-b-none");
+                    detail.previousElementSibling.setAttribute("aria-expanded", "false");
                 }
             });
             detailItem.classList.toggle("hidden");
             summaryItem.classList.toggle("rounded-b-none", !detailItem.classList.contains("hidden"));
+            summaryItem.setAttribute("aria-expanded", String(!detailItem.classList.contains("hidden")));
+        };
+        summaryItem.addEventListener("click", toggleDetails);
+        summaryItem.addEventListener("keydown", (event) => {
+            if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                toggleDetails();
+            }
         });
 
         wrapper.appendChild(summaryItem);
@@ -989,25 +1050,26 @@
         state.activeMode = "journal";
         state.currentResults = [];
         clearSharedResults();
-        elements.resultsContainer.innerHTML = '<p class="text-gray-600 italic my-4">Type a journal name or ISSN to search.</p>';
+        elements.resultsContainer.innerHTML = '<p class="text-gray-600 italic my-4">Enter a journal name or ISSN, select filters, or click Search to browse all journals.</p>';
     }
 
     function showConferenceSearchPrompt() {
         state.activeMode = "conference";
         state.currentResults = [];
         clearSharedResults();
-        elements.resultsContainer.innerHTML = '<p class="text-gray-600 italic my-4">Type a conference name or ISSN to search.</p>';
+        elements.resultsContainer.innerHTML = '<p class="text-gray-600 italic my-4">Type a conference name or ISSN, or select a grade or research area.</p>';
     }
 
     function showPublisherSearchPrompt() {
         state.activeMode = "publisher";
         state.currentResults = [];
         clearSharedResults();
-        elements.resultsContainer.innerHTML = '<p class="text-gray-600 italic my-4">Type a publisher name or ISBN to search.</p>';
+        elements.resultsContainer.innerHTML = '<p class="text-gray-600 italic my-4">Type a publisher name or ISBN, or select a grade.</p>';
     }
 
     function queueJournalSearch({ immediate = false } = {}) {
         clearPendingJournalSearch();
+        state.journalSearchRequestToken += 1;
         if (immediate) {
             void runJournalSearch();
             return;
@@ -1018,8 +1080,18 @@
         }, 250);
     }
 
+    function submitJournalSearch() {
+        state.journalBrowseAll = !elements.journalInput.value.trim()
+            && !selectedValues(elements.rankSelect).size
+            && !selectedValues(elements.asjcSelect).size
+            && !selectedValues(elements.publisherSelect).size
+            && elements.openAccessSelect.value === "All";
+        queueJournalSearch({ immediate: true });
+    }
+
     function queueConferenceSearch({ immediate = false } = {}) {
         clearPendingJournalSearch();
+        state.journalSearchRequestToken += 1;
         if (immediate) {
             void runConferenceSearch();
             return;
@@ -1032,6 +1104,7 @@
 
     function queuePublisherSearch({ immediate = false } = {}) {
         clearPendingJournalSearch();
+        state.journalSearchRequestToken += 1;
         if (immediate) {
             void runPublisherSearch();
             return;
@@ -1054,10 +1127,11 @@
     }
 
     async function displayResults(isLoadMore = false) {
+        const requestToken = state.journalSearchRequestToken;
         const isFilterSearch = state.activeMode === "filter";
         const resultLabels = {
             journal: "journal",
-            filter: "result",
+            filter: "journal",
             conference: "conference",
             publisher: "publisher",
         };
@@ -1076,6 +1150,7 @@
         }
 
         await ensureLoadedResults(state.currentOffset + RESULTS_PER_PAGE);
+        if (requestToken !== state.journalSearchRequestToken) return;
 
         if (!totalResults) {
             elements.paginationContainer.innerHTML = "";
@@ -1143,10 +1218,16 @@
 
     async function runJournalSearch() {
         const rawQuery = elements.journalInput.value.trim();
+        const selectedGrades = selectedValues(elements.rankSelect);
+        const selectedAsjc = selectedValues(elements.asjcSelect);
+        const selectedPublishers = selectedValues(elements.publisherSelect);
+        const openAccessValue = elements.openAccessSelect.value;
+        const sortValue = elements.sortSelect.value;
+        const hasFilters = selectedGrades.size || selectedAsjc.size || selectedPublishers.size || openAccessValue !== "All";
         const requestToken = state.journalSearchRequestToken + 1;
         state.journalSearchRequestToken = requestToken;
 
-        if (!rawQuery) {
+        if (!rawQuery && !hasFilters && !state.journalBrowseAll) {
             showJournalSearchPrompt();
             return;
         }
@@ -1154,58 +1235,45 @@
         elements.resultsContainer.innerHTML = '<p class="text-gray-600 italic my-4">Searching journals...</p>';
         elements.paginationContainer.innerHTML = "";
 
-        const flexSearchResults = await searchRecordsWithFlexSearch(rawQuery);
-        if (requestToken !== state.journalSearchRequestToken) {
-            return;
-        }
-        state.activeMode = "journal";
-
-        if (flexSearchResults !== null) {
-            state.currentResults = flexSearchResults;
-            state.currentResultsTotal = flexSearchResults.length;
+        try {
+            const records = await loadRecords();
+            if (requestToken !== state.journalSearchRequestToken) return;
+            // Resolve names and exact ISSNs before filtering. An excluded exact
+            // identifier must not fall back to unrelated fuzzy title matches.
+            let candidates = rawQuery ? await searchRecordsWithFlexSearch(rawQuery) : records;
+            if (requestToken !== state.journalSearchRequestToken) return;
+            if (candidates === null) {
+                const buckets = collectLinearSearchBuckets(records, normalizeText(rawQuery), compactIssn(rawQuery));
+                candidates = isCompleteIssnQuery(rawQuery) && buckets.exactIssn.length ? buckets.exactIssn : mergeRecordGroups(
+                    buckets.exactIssn, buckets.exactPrimaryTitle, buckets.prefixPrimaryTitle,
+                    buckets.phrasePrimaryTitle, buckets.orderedPrimaryTokens, buckets.allPrimaryTokens,
+                    buckets.exactVariantTitle, buckets.prefixVariantTitle, buckets.phraseVariantTitle,
+                    buckets.orderedVariantTokens, buckets.allVariantTokens
+                );
+            }
+            const matches = candidates.filter((record) => matchesJournalGradeSelection(record, selectedGrades)
+                && (!selectedAsjc.size || record.asjcCodes.some((code) => selectedAsjc.has(code)))
+                && (!selectedPublishers.size || record.publishers.some((publisher) => selectedPublishers.has(publisher)))
+                && (openAccessValue === "All" || isOpenAccess(record) === (openAccessValue === "Yes")));
+            state.currentResults = sortValue === "relevance" && rawQuery ? matches : sortRecords(matches, sortValue);
+            state.activeMode = rawQuery ? "journal" : "filter";
+            state.currentResultsTotal = state.currentResults.length;
             state.loadMoreResults = null;
             await displayResults();
-            return;
+        } catch (error) {
+            console.error("Unable to search journals.", error);
+            if (requestToken === state.journalSearchRequestToken) showDataLoadError();
         }
-
-        const records = await ensureRecords(null, "Loading journal data...");
-        if (requestToken !== state.journalSearchRequestToken || !records) {
-            return;
-        }
-
-        const query = normalizeText(rawQuery);
-        const issnQuery = compactIssn(rawQuery);
-        const linearBuckets = collectLinearSearchBuckets(records, query, issnQuery);
-
-        state.currentResults = mergeRecordGroups(
-            linearBuckets.exactIssn,
-            linearBuckets.exactPrimaryTitle,
-            linearBuckets.prefixPrimaryTitle,
-            linearBuckets.phrasePrimaryTitle,
-            linearBuckets.orderedPrimaryTokens,
-            linearBuckets.allPrimaryTokens,
-            linearBuckets.exactVariantTitle,
-            linearBuckets.prefixVariantTitle,
-            linearBuckets.phraseVariantTitle,
-            linearBuckets.orderedVariantTokens,
-            linearBuckets.allVariantTokens
-        );
-        state.currentResultsTotal = state.currentResults.length;
-        state.loadMoreResults = null;
-
-        if (requestToken !== state.journalSearchRequestToken) {
-            return;
-        }
-
-        await displayResults();
     }
 
     async function runConferenceSearch() {
         const rawQuery = elements.conferenceInput.value.trim();
+        const selectedGrades = selectedValues(elements.conferenceGradeSelect);
+        const selectedAreas = selectedValues(elements.conferenceAreaSelect);
         const requestToken = state.journalSearchRequestToken + 1;
         state.journalSearchRequestToken = requestToken;
 
-        if (!rawQuery) {
+        if (!rawQuery && !selectedGrades.size && !selectedAreas.size) {
             showConferenceSearchPrompt();
             return;
         }
@@ -1220,28 +1288,35 @@
                 return;
             }
 
-            state.currentResults = collectDirectorySearchResults(records, rawQuery, {
+            const filteredRecords = records.filter((record) => (!selectedGrades.size || selectedGrades.has(record.grade))
+                && (!selectedAreas.size || record.researchAreas.some((area) => selectedAreas.has(area))
+                    || (selectedAreas.has("__unclassified__") && !record.researchAreas.length)));
+            const compare = (left, right) => gradeValue(right.grade) - gradeValue(left.grade)
+                || left.uncertainty - right.uncertainty
+                || left.name.localeCompare(right.name);
+            state.currentResults = rawQuery ? collectDirectorySearchResults(filteredRecords, rawQuery, {
                 textValues: (record) => [record.name],
                 identifiers: (record) => record.issns,
-                compare: (left, right) => gradeValue(right.grade) - gradeValue(left.grade)
-                    || left.uncertainty - right.uncertainty
-                    || left.name.localeCompare(right.name),
-            });
+                compare,
+            }) : filteredRecords.sort(compare);
             state.currentResultsTotal = state.currentResults.length;
             state.loadMoreResults = null;
             await displayResults();
         } catch (error) {
             console.error(error);
-            showDataLoadError();
+            if (requestToken === state.journalSearchRequestToken) {
+                showDataLoadError();
+            }
         }
     }
 
     async function runPublisherSearch() {
         const rawQuery = elements.publisherSearchInput.value.trim();
+        const selectedGrades = selectedValues(elements.publisherGradeSelect);
         const requestToken = state.journalSearchRequestToken + 1;
         state.journalSearchRequestToken = requestToken;
 
-        if (!rawQuery) {
+        if (!rawQuery && !selectedGrades.size) {
             showPublisherSearchPrompt();
             return;
         }
@@ -1256,89 +1331,38 @@
                 return;
             }
 
-            state.currentResults = collectDirectorySearchResults(records, rawQuery, {
+            const filteredRecords = records.filter((record) => !selectedGrades.size || selectedGrades.has(record.grade));
+            const compare = (left, right) => gradeValue(right.grade) - gradeValue(left.grade)
+                || (Number.isFinite(left.reliability) ? left.reliability : Infinity) - (Number.isFinite(right.reliability) ? right.reliability : Infinity)
+                || left.name.localeCompare(right.name);
+            state.currentResults = rawQuery ? collectDirectorySearchResults(filteredRecords, rawQuery, {
                 textValues: (record) => [record.name, ...record.aliases],
                 identifiers: (record) => record.allIsbns,
-                compare: (left, right) => gradeValue(right.grade) - gradeValue(left.grade)
-                    || right.reliability - left.reliability
-                    || left.name.localeCompare(right.name),
-            });
+                compare,
+            }) : filteredRecords.sort(compare);
             state.currentResultsTotal = state.currentResults.length;
             state.loadMoreResults = null;
             await displayResults();
         } catch (error) {
             console.error(error);
-            showDataLoadError();
-        }
-    }
-
-    async function runFilterSearch() {
-        clearPendingJournalSearch();
-        state.journalSearchRequestToken += 1;
-        state.activeMode = "filter";
-        const selectedGrades = new Set(state.tomSelect.rank ? state.tomSelect.rank.getValue() : []);
-        const selectedAsjc = new Set(state.tomSelect.asjc ? state.tomSelect.asjc.getValue() : []);
-        const selectedPublishers = new Set(state.tomSelect.publisher ? state.tomSelect.publisher.getValue() : []);
-        const openAccessValue = elements.openAccessSelect.value;
-        const sortValue = elements.sortSelect.value;
-
-        const originalText = elements.filterBtn.textContent;
-        elements.filterBtn.disabled = true;
-        elements.filterBtn.textContent = "Filtering...";
-        elements.resultsContainer.innerHTML = '<p class="text-gray-600 italic my-4">Filtering journals...</p>';
-        elements.paginationContainer.innerHTML = "";
-
-        try {
-            const records = await ensureRecords(null, "Loading journal data...");
-            if (!records) {
-                return;
+            if (requestToken === state.journalSearchRequestToken) {
+                showDataLoadError();
             }
-
-            state.currentResults = sortRecords(records.filter((record) => {
-                if (selectedGrades.size && !selectedGrades.has(record.grade)) {
-                    return false;
-                }
-                if (selectedAsjc.size && !record.asjcCodes.some((code) => selectedAsjc.has(code))) {
-                    return false;
-                }
-                if (selectedPublishers.size && !record.publishers.some((publisher) => selectedPublishers.has(publisher))) {
-                    return false;
-                }
-                if (openAccessValue === "Yes" && !isOpenAccess(record)) {
-                    return false;
-                }
-                if (openAccessValue === "No" && isOpenAccess(record)) {
-                    return false;
-                }
-                return true;
-            }), sortValue);
-            state.currentResultsTotal = state.currentResults.length;
-            state.loadMoreResults = null;
-
-            await displayResults();
-        } finally {
-            elements.filterBtn.disabled = false;
-            elements.filterBtn.textContent = originalText;
         }
     }
 
-    function resetFilterPanel() {
+    function resetJournalSearch() {
         clearPendingJournalSearch();
         state.journalSearchRequestToken += 1;
-        if (state.tomSelect.rank) {
-            state.tomSelect.rank.clear(true);
-        }
-        if (state.tomSelect.asjc) {
-            state.tomSelect.asjc.clear(true);
-        }
-        if (state.tomSelect.publisher) {
-            state.tomSelect.publisher.clear(true);
-        }
+        clearSelect(elements.rankSelect);
+        clearSelect(elements.asjcSelect);
+        clearSelect(elements.publisherSelect);
         elements.openAccessSelect.value = "All";
-        elements.sortSelect.value = "name-asc";
-        state.activeMode = "filter";
-        state.currentResults = [];
-        clearSharedResults();
+        elements.sortSelect.value = "relevance";
+        elements.journalInput.value = "";
+        state.journalBrowseAll = false;
+        showJournalSearchPrompt();
+        elements.journalInput.focus();
     }
 
     function switchTab(nextTab) {
@@ -1353,7 +1377,6 @@
             journal: { button: elements.tabJournalSearch, panel: elements.panelJournalSearch },
             conference: { button: elements.tabConferenceSearch, panel: elements.panelConferenceSearch },
             publisher: { button: elements.tabPublisherSearch, panel: elements.panelPublisherSearch },
-            filter: { button: elements.tabFilterSearch, panel: elements.panelFilterSearch },
             about: { button: elements.tabAbout, panel: elements.panelAbout },
             faq: { button: elements.tabFaq, panel: elements.panelFaq },
             contact: { button: elements.tabContact, panel: elements.panelContact },
@@ -1367,9 +1390,16 @@
         tabs[nextTab].button.classList.add("active");
         tabs[nextTab].panel.classList.remove("hidden");
 
-        if (nextTab === "filter" && !state.selectsReady) {
+        if (nextTab === "journal" && !state.selectsReady) {
             initializeSelects();
             state.selectsReady = true;
+        }
+
+        if (nextTab === "conference" || nextTab === "publisher") {
+            initializeDirectorySelects();
+        }
+        if (nextTab === "conference") {
+            void initializeConferenceAreas();
         }
 
         if (nextTab === "about" && !state.aboutReady) {
@@ -1378,25 +1408,13 @@
         }
 
         if (nextTab === "journal") {
-            if (elements.journalInput.value.trim()) {
-                queueJournalSearch({ immediate: true });
-            } else {
-                showJournalSearchPrompt();
-            }
+            queueJournalSearch({ immediate: true });
         }
         if (nextTab === "conference") {
-            if (elements.conferenceInput.value.trim()) {
-                queueConferenceSearch({ immediate: true });
-            } else {
-                showConferenceSearchPrompt();
-            }
+            queueConferenceSearch({ immediate: true });
         }
         if (nextTab === "publisher") {
-            if (elements.publisherSearchInput.value.trim()) {
-                queuePublisherSearch({ immediate: true });
-            } else {
-                showPublisherSearchPrompt();
-            }
+            queuePublisherSearch({ immediate: true });
         }
     }
 
@@ -1483,39 +1501,79 @@
         });
     }
 
+    function initializeMultiSelect(element, options, placeholder) {
+        element.replaceChildren(...options.map(({ value, text }) => new Option(text, value)));
+        if (typeof TomSelect !== "undefined") {
+            return new TomSelect(element, {
+                plugins: ["remove_button"],
+                persist: false,
+                create: false,
+                hidePlaceholder: true,
+                maxOptions: 1000,
+                placeholder,
+            });
+        }
+        element.classList.add("native-multi-select");
+        return null;
+    }
+
+    function initializeDirectorySelects() {
+        if (state.directorySelectsReady) {
+            return;
+        }
+        const gradeOptions = GRADE_ORDER.map((grade) => ({ value: grade, text: grade }));
+        initializeMultiSelect(elements.conferenceGradeSelect, gradeOptions, "All grades");
+        initializeMultiSelect(elements.publisherGradeSelect, gradeOptions, "All grades");
+        initializeMultiSelect(elements.conferenceAreaSelect, [], "Loading research areas...");
+        state.directorySelectsReady = true;
+    }
+
+    async function initializeConferenceAreas() {
+        if (state.conferenceAreasReady) {
+            return;
+        }
+        if (!state.conferenceAreasPromise) {
+            state.conferenceAreasPromise = (async () => {
+                try {
+                    const records = await loadConferenceRecords();
+                    const areas = uniqueValues(records.flatMap((record) => record.researchAreas))
+                        .sort((left, right) => left.localeCompare(right));
+                    const options = areas.map((area) => ({ value: area, text: area }));
+                    if (records.some((record) => !record.researchAreas.length)) {
+                        options.push({ value: "__unclassified__", text: "Not classified" });
+                    }
+                    const select = elements.conferenceAreaSelect;
+                    if (select.tomselect) {
+                        select.tomselect.addOptions(options);
+                        select.tomselect.settings.placeholder = "All research areas";
+                        select.tomselect.inputState();
+                        select.tomselect.enable();
+                    } else {
+                        select.replaceChildren(...options.map(({ value, text }) => new Option(text, value)));
+                        select.disabled = false;
+                    }
+                    state.conferenceAreasReady = true;
+                    elements.conferenceAreaHelp.textContent = "Research areas use CORE Fields of Research. Grades and areas can be combined with your search.";
+                } catch (error) {
+                    console.error("Unable to load conference research areas.", error);
+                    elements.conferenceAreaHelp.textContent = "Unable to load research areas. Reopen this tab to retry.";
+                }
+            })().finally(() => { state.conferenceAreasPromise = null; });
+        }
+        return state.conferenceAreasPromise;
+    }
+
     function initializeSelects() {
         const uniquePublishers = Array.isArray(payload.publisherOptions) ? payload.publisherOptions : [];
         const asjcOptions = Object.entries(payload.asjcLookup)
             .sort((left, right) => left[0].localeCompare(right[0]))
             .map(([code, label]) => ({ value: code, text: `${code} ${label}` }));
 
-        const sharedConfig = {
-            plugins: ["remove_button"],
-            persist: false,
-            create: false,
-            hidePlaceholder: true,
-            maxOptions: 1000,
-        };
-
-        if (typeof TomSelect !== "undefined") {
-            state.tomSelect.rank = new TomSelect(elements.rankSelect, {
-                ...sharedConfig,
-                placeholder: "Select grades...",
-                options: GRADE_ORDER.map((grade) => ({ value: grade, text: grade })),
-            });
-
-            state.tomSelect.asjc = new TomSelect(elements.asjcSelect, {
-                ...sharedConfig,
-                placeholder: "Select ASJC codes or names...",
-                options: asjcOptions,
-            });
-
-            state.tomSelect.publisher = new TomSelect(elements.publisherSelect, {
-                ...sharedConfig,
-                placeholder: "Select publishers...",
-                options: uniquePublishers.map((publisher) => ({ value: publisher, text: publisher })),
-            });
-        }
+        state.tomSelect.rank = initializeMultiSelect(elements.rankSelect,
+            [...GRADE_ORDER, "Elite", "Warning list"].map((grade) => ({ value: grade, text: grade })), "Select grades or lists...");
+        state.tomSelect.asjc = initializeMultiSelect(elements.asjcSelect, asjcOptions, "Select ASJC codes or names...");
+        state.tomSelect.publisher = initializeMultiSelect(elements.publisherSelect,
+            uniquePublishers.map((publisher) => ({ value: publisher, text: publisher })), "Select publishers...");
     }
 
     function bindEvents() {
@@ -1523,11 +1581,12 @@
             if (state.activeTab !== "journal") {
                 return;
             }
+            state.journalBrowseAll = false;
             queueJournalSearch();
         });
         elements.journalInput.addEventListener("keyup", (event) => {
             if (event.key === "Enter") {
-                queueJournalSearch({ immediate: true });
+                submitJournalSearch();
             }
         });
         elements.conferenceInput.addEventListener("input", () => {
@@ -1553,36 +1612,58 @@
             }
         });
         elements.clearSearchBtn.addEventListener("click", () => {
-            clearPendingJournalSearch();
-            state.journalSearchRequestToken += 1;
             elements.journalInput.value = "";
-            showJournalSearchPrompt();
+            queueJournalSearch({ immediate: true });
             elements.journalInput.focus();
         });
         elements.clearConferenceSearchBtn.addEventListener("click", () => {
-            clearPendingJournalSearch();
-            state.journalSearchRequestToken += 1;
             elements.conferenceInput.value = "";
-            showConferenceSearchPrompt();
+            queueConferenceSearch({ immediate: true });
             elements.conferenceInput.focus();
         });
         elements.clearPublisherSearchBtn.addEventListener("click", () => {
-            clearPendingJournalSearch();
-            state.journalSearchRequestToken += 1;
             elements.publisherSearchInput.value = "";
-            showPublisherSearchPrompt();
+            queuePublisherSearch({ immediate: true });
             elements.publisherSearchInput.focus();
         });
 
-        elements.filterBtn.addEventListener("click", () => {
-            void runFilterSearch();
+        [elements.conferenceGradeSelect, elements.conferenceAreaSelect].forEach((select) => {
+            select.addEventListener("change", () => {
+                if (state.activeTab === "conference") {
+                    queueConferenceSearch({ immediate: true });
+                }
+            });
         });
-        elements.resetBtn.addEventListener("click", resetFilterPanel);
+        elements.publisherGradeSelect.addEventListener("change", () => {
+            if (state.activeTab === "publisher") {
+                queuePublisherSearch({ immediate: true });
+            }
+        });
+        elements.resetConferenceBtn.addEventListener("click", () => {
+            clearSelect(elements.conferenceGradeSelect);
+            clearSelect(elements.conferenceAreaSelect);
+            elements.conferenceInput.value = "";
+            queueConferenceSearch({ immediate: true });
+            elements.conferenceInput.focus();
+        });
+        elements.resetPublisherBtn.addEventListener("click", () => {
+            clearSelect(elements.publisherGradeSelect);
+            elements.publisherSearchInput.value = "";
+            queuePublisherSearch({ immediate: true });
+            elements.publisherSearchInput.focus();
+        });
+
+        elements.filterBtn.addEventListener("click", submitJournalSearch);
+        elements.resetBtn.addEventListener("click", resetJournalSearch);
+        [elements.rankSelect, elements.asjcSelect, elements.publisherSelect, elements.openAccessSelect, elements.sortSelect].forEach((select) => {
+            select.addEventListener("change", () => {
+                if (state.activeTab === "journal" && state.selectsReady) queueJournalSearch({ immediate: true });
+            });
+        });
 
         elements.tabJournalSearch.addEventListener("click", () => switchTab("journal"));
         elements.tabConferenceSearch.addEventListener("click", () => switchTab("conference"));
         elements.tabPublisherSearch.addEventListener("click", () => switchTab("publisher"));
-        elements.tabFilterSearch.addEventListener("click", () => switchTab("filter"));
         elements.tabAbout.addEventListener("click", () => switchTab("about"));
         elements.tabFaq.addEventListener("click", () => switchTab("faq"));
         elements.tabContact.addEventListener("click", () => switchTab("contact"));
@@ -1723,6 +1804,10 @@
             {
                 question: "Do the 0-100 scores still matter?",
                 answer: `Only for context. ORBIT computes simple percentile-style scores per level to show where a level sits in the current data and to compute a disagreement metric. Letter grades come from the overlap rubric, not from those scores.`,
+            },
+            {
+                question: "How should I interpret the publisher Reliability Score?",
+                answer: `The Reliability Score is a normalized disagreement measure on a 0–1 scale. Lower values indicate stronger agreement between the publisher ranking signals; higher values indicate greater disagreement. This score provides context and does not change the publisher's letter grade. Missing scores are shown as N/A.`,
             },
             {
                 question: "How do you treat imprints, mergers, and series?",

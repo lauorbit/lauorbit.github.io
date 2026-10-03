@@ -221,18 +221,18 @@ def is_truthy(value: object) -> bool:
     return clean_string(value).casefold() in {"yes", "true", "1", "y"}
 
 
-def maybe_float(value: object) -> float | str:
+def maybe_float(value: object, precision: int = 4) -> float | str:
     if value is None:
         return ""
     if isinstance(value, (int, float)):
         number = float(value)
-        return round(number, 4)
+        return round(number, precision)
 
     text = clean_string(value)
     if not text:
         return ""
     try:
-        return round(float(text), 4)
+        return round(float(text), precision)
     except ValueError:
         return text
 
@@ -296,6 +296,17 @@ def load_asjc_lookup(scopus_path: Path) -> dict[str, str]:
 
     workbook.close()
     return lookup
+
+
+def load_site_meta(path: Path) -> dict[str, object]:
+    """Read the previous public lookup/count snapshot without evaluating JavaScript."""
+    if not path.exists():
+        return {}
+    text = path.read_text(encoding="utf-8")
+    marker = "globalThis.ORBIT_SITE_META="
+    if marker not in text:
+        raise ValueError(f"Invalid site metadata: {path}")
+    return json.loads(text.split(marker, 1)[1].strip().removesuffix(";"))
 
 
 def iter_rows(values: Iterable[tuple[object, ...]]) -> Iterable[tuple[object, ...]]:
@@ -613,7 +624,15 @@ def build_payload(
         if missing:
             raise ValueError(f"Missing required columns in {input_path}: {', '.join(missing)}")
 
-        asjc_lookup = load_asjc_lookup(scopus_path)
+        # Keep a checkout rebuildable without the private source databases. The
+        # existing metadata is the published source snapshot, not a new ranking.
+        previous_meta = load_site_meta(input_path.parent / "data" / "orbit-site-meta.js")
+        if scopus_path.exists():
+            asjc_lookup = load_asjc_lookup(scopus_path)
+        else:
+            asjc_lookup = previous_meta.get("asjcLookup", {})
+            if not asjc_lookup:
+                raise ValueError("Provide --scopus or an existing data/orbit-site-meta.js with ASJC labels")
         rows: list[list[object]] = []
         grade_counts: Counter[str] = Counter()
         source_rank_counts: dict[str, Counter[str]] = {
@@ -697,6 +716,13 @@ def build_payload(
     finally:
         workbook.close()
 
+    previous_systems = previous_meta.get("rankingDistributions", {}).get("systems", [])
+    for system in previous_systems:
+        if system["key"] in source_rank_counts:
+            source_rank_counts[system["key"]] = Counter({
+                entry["rank"]: entry["count"] for entry in system["rankCounts"]
+            })
+
     ranking_distributions = build_ranking_distributions(
         databases_dir,
         current_year,
@@ -726,6 +752,11 @@ def build_payload(
             "openAccess": FLAG_OPEN_ACCESS,
         },
         "ratingLabels": [label for label, _ in RATING_COLUMNS],
+        "publisherReliability": {
+            "scale": [0, 1],
+            "lowerIsBetter": True,
+            "method": "Cross-system disagreement divided by 100; source scores use a 0-100 scale.",
+        },
         "publisherOptions": sorted(publisher_options),
         "stats": {
             "gradedEntries": sum(
@@ -782,13 +813,23 @@ def build_publisher_rows(workbook) -> list[list[object]]:
     for raw in iter_rows(worksheet.iter_rows(min_row=2, values_only=True)):
         jufo_name = clean_string(raw[header_index["JUFO_Name"]])
         nor_title = clean_string(raw[header_index["NOR_InternationalTitle"]])
-        aliases = split_unique("|".join(value for value in [nor_title, jufo_name] if value), r"\|")
+        alias_index = header_index.get("Known_Aliases", len(raw))
+        known_aliases = clean_string(raw[alias_index]) if alias_index < len(raw) else ""
+        aliases = split_unique("|".join(value for value in [nor_title, jufo_name, known_aliases] if value), r"\|")
         display_name = aliases[0] if aliases else ""
         jufo_isbns = split_identifiers(raw[header_index["JUFO_ISBNs"]])
         nor_isbns = split_identifiers(raw[header_index["NOR_ISBNs"]])
         shared_isbns = split_identifiers(raw[header_index["Shared_ISBNs"]])
         if not display_name and not jufo_isbns and not nor_isbns and not shared_isbns:
             continue
+
+        reliability = maybe_float(raw[header_index["Reliability_Score"]], precision=5)
+        if reliability != "" and (
+            not isinstance(reliability, (int, float))
+            or not math.isfinite(reliability)
+            or not 0 <= reliability <= 1
+        ):
+            raise ValueError(f"Publisher reliability must be normalized to [0, 1]: {display_name}")
 
         rows.append(
             [
@@ -800,7 +841,7 @@ def build_publisher_rows(workbook) -> list[list[object]]:
                 clean_string(raw[header_index["JUFO_JUFOLevel"]]),
                 clean_string(raw[header_index["NOR_NorwegianLevel"]]),
                 clean_string(raw[header_index["Final_Grade"]]) or "Unranked",
-                maybe_float(raw[header_index["Reliability_Score"]]),
+                reliability,
                 clean_string(raw[header_index["NOR_URL"]]),
             ]
         )
@@ -823,6 +864,7 @@ def build_conference_rows(workbook) -> list[list[object]]:
         "CORE rank",
         "JUFO Level",
         "Norwegian level",
+        "Research Areas",
     }
     missing = [column for column in sorted(required_columns) if column not in header_index]
     if missing:
@@ -845,6 +887,7 @@ def build_conference_rows(workbook) -> list[list[object]]:
                 clean_string(raw[header_index["CORE rank"]]),
                 clean_string(raw[header_index["JUFO Level"]]),
                 clean_string(raw[header_index["Norwegian level"]]),
+                split_unique(raw[header_index["Research Areas"]], r"\|"),
             ]
         )
 
