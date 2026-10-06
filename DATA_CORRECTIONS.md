@@ -21,7 +21,7 @@ The supplied checkout matched https://lauorbit.github.io/ before these changes. 
 | IEEE Transactions on Systems, Man, and Cybernetics, Part B: Cybernetics | IEEE Transactions on Cybernetics | A+ |
 | IEEE Transactions on Systems, Man, and Cybernetics, Part C: Applications and Reviews | IEEE Transactions on Human-Machine Systems | B |
 
-The current-title grades already existed in the supplied workbook. Their canonical titles now appear first, with the former titles and ISSNs retained as searchable aliases. The ungraded historical Part A duplicate was merged into Systems. The separate pre-1996 journal record is unchanged. Former ISSNs are search aliases, not claims that the current journals still use those ISSNs.
+The current-title grades already existed in the supplied workbook. Their canonical titles now appear first, with the former titles and ISSNs retained as searchable aliases. The ungraded historical Part A duplicate was merged into Systems. The separate pre-1996 journal record was retained in the 3 October update and removed on 6 October as documented below. Former ISSNs are search aliases, not claims that the current journals still use those ISSNs.
 
 Sources: [IEEE Systems](https://www.ieeesmc.org/publications/transactions-on-smc-systems/), [IEEE Cybernetics](https://www.ieeesmc.org/publications/transactions-on-cybernetics/), [IEEE Human-Machine Systems](https://www.ieeesmc.org/publications/transactions-on-human-machine-systems/), [IEEE reorganization editorial](https://www.ieeesmc.org/wp-content/uploads/2015/01/Editorial-SMC-Legacy-2013.pdf), [ISSN Part B](https://portal.issn.org/resource/ISSN/1941-0492), [ISSN Part C](https://portal.issn.org/resource/ISSN/1558-2442).
 
@@ -58,7 +58,7 @@ The CSE label is CORE's Computer systems engineering category; 46 is the broader
 
 Run `python3 tools/build_site_dataset.py` with openpyxl available. The workbook is the source of record. If the external Scopus/source ranking databases are absent, the builder reuses the published ASJC lookup and source distribution counts already in data/orbit-site-meta.js. It recomputes current ORBIT counts and rejects publisher scores outside [0,1]. Publisher score precision is preserved to five decimal places.
 
-The output contains 49,623 journal records, 6,565 publisher records, and 355 conference records.
+The current output contains 49,622 journal records, 6,565 publisher records, and 355 conference records.
 
 ## Validation
 
@@ -67,3 +67,7 @@ An independent comparison checked 1,167,268 workbook cells: all 2,019 value chan
 Browser verification passed 45 assertions covering Elite/Warning membership, combined conference grade/area filters, publisher grade filters, clearing/resetting filters, retained tab selections, current/former IEEE ISSNs, corrected De Gruyter results, normal journal-name search, and 390-pixel mobile layouts. No JavaScript page errors were detected. Desktop and mobile screenshots were visually reviewed.
 
 The subsequent journal-search integration passed browser checks for name/ISSN and all-filter intersections, each criterion excluding an otherwise exact match, filter-only counts and pagination, every sort option, clear/reset behavior, retained state across tabs, rapid input changes, and browsing the complete directory. Desktop and 390-pixel mobile screenshots passed visual review with no horizontal overflow or JavaScript page errors. The workbook and generated datasets remain byte-identical to the validated data update.
+
+## Journal removal — 6 October 2026
+
+Removed IEEE Transactions on Systems, Man and Cybernetics, identified by ISSNs 0018-9472 and 2168-2909, from the authoritative workbook and regenerated website directory at the user's request. Unified_Journals row 41611 was cleared without shifting other rows. The directory now contains 49,622 journals. All other workbook values and styles and all other generated journal, publisher, and conference records are preserved. The current Systems (A), Cybernetics (A+), and Human-Machine Systems (B) entries remain present.
